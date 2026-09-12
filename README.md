@@ -35,6 +35,8 @@ Abrir la aplicación una vez con red antes de probar sin conexión. El service w
 
 ## Demo de punta a punta
 
+En **Explorar** se elige primero una de dos tarjetas: **Producto** para revisar artículo, vendedor, alternativas y carrito; o **Sitio web** para revisar identidad, dominio, registro RDAP/WHOIS y señales de phishing. El demo web usa exclusivamente un dominio reservado `.example` y evidencia ficticia claramente etiquetada.
+
 1. Seleccionar **Demo** y pulsar **Analizar** (la URL `https://example.com/audifonos` se completa automáticamente).
 2. Revisar el riesgo y desplegar evidencias.
 3. Agregar Demo Centro, Demo San Pedro y Demo Online.
@@ -56,9 +58,9 @@ Los datos demo residen exclusivamente en `backend/app/services/demo.py`: tiendas
 - Rutas en auto con OSRM; orden por vecino más cercano y trazado real por calles. Se llama **ruta recomendada**, sin garantía de optimalidad ni tráfico en vivo.
 - Lista local, selección de sucursal, agrupación de paradas, origen manual/geolocalizado y mapa sincronizado.
 
-La antigüedad de dominio se consulta mediante RDAP cuando el registro público la publica. Es una señal técnica: un dominio reciente requiere cautela, pero uno antiguo no acredita al vendedor ni evita suplantaciones. La reputación externa y la detección independiente de suplantaciones siguen sin integrarse y se reportan como no disponibles. El nivel normalmente es “información insuficiente”; las advertencias observadas pueden producir “medio”. No se emiten “bajo” o “alto” sin evidencia suficiente, aunque están previstos en el contrato. HTTPS nunca equivale a tienda segura.
+La antigüedad, registrador, fechas, nameservers y estados del dominio se consultan mediante RDAP, el reemplazo estandarizado de WHOIS, cuando el registro público los publica. Son señales técnicas: un dominio reciente requiere cautela, pero uno antiguo no acredita al operador ni evita que un sitio haya sido comprometido. La auditoría web también revisa redirecciones, forma del dominio, formularios sensibles, destinos externos y posibles inconsistencias con contenido gubernamental. Son heurísticas explicables, no una acusación ni una garantía. HTTPS nunca equivale a sitio seguro.
 
-No hay un LLM configurado: el agente del MVP es un flujo determinista de extracción → señales → búsqueda → comparación. Las páginas externas son datos no confiables; no se ejecuta su contenido ni se interpreta como instrucciones.
+Sin `BEDROCK_MODEL_ID`, el análisis conserva el flujo determinista de extracción → RDAP → señales → búsqueda/comparación. Con Bedrock configurado, el modelo únicamente interpreta el expediente estructurado y validado; no recibe herramientas de red ni instrucciones ejecutables del sitio analizado.
 
 ## Integraciones y variables
 
@@ -91,7 +93,7 @@ Para la explicación IA en Bedrock, usar `bedrock-runtime` y `Converse`, con sal
 | Método | Endpoint | Resultado |
 |---|---|---|
 | GET | `/health` | Salud del proceso e integraciones configuradas; no prueba disponibilidad externa. |
-| POST | `/analyses` | `{url, mode: "real" \| "demo"}` → HTTP 202, identificador y estado. |
+| POST | `/analyses` | `{url, mode: "real" \| "demo", target: "product" \| "website"}` → HTTP 202, identificador y estado. |
 | GET | `/analyses/{id}` | Estado real: queued, extracting, evaluating, searching, completed/error; resultado y limitaciones. |
 | GET | `/analyses/{id}/alternatives` | Alternativas y estado del análisis. |
 | POST | `/routes` | Origen `{lat,lng}`, hasta diez paradas `{id,name,lat,lng}`, modo driving/walking/cycling y flag demo. |

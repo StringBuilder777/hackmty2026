@@ -17,6 +17,15 @@ def test_demo_flow_and_health():
         assert result['alternatives'][2]['branches'] == []
         assert result['alternatives'][0]['branches'][0]['inventory'] == 'pending'
 
+        website = client.post('/analyses', json={'url': 'https://tienda-tramites.example', 'mode': 'demo', 'target': 'website'})
+        assert website.status_code == 202
+        website_result = client.get('/analyses/' + website.json()['id']).json()
+        assert website_result['target'] == 'website'
+        assert website_result['product'] is None and website_result['alternatives'] == []
+        assert website_result['website_profile']['domain'] == 'tienda-tramites.example'
+        assert website_result['domain_registration']['age_days'] == 23
+        assert website_result['risk']['level'] == 'alto'
+
 
 def test_errors_are_consistent():
     with TestClient(app) as client:

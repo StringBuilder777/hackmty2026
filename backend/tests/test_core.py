@@ -11,6 +11,8 @@ from app.services.risk import audit_consistency, comparable_host, evaluate
 from app.services.domain import _creation_date
 from app.services.agent import _parse, _payload
 from app.services.store import inspect_store
+from app.services.website import extract_website
+from app.services.phishing import evaluate_website
 
 @pytest.mark.parametrize('url', [
     'file:///etc/passwd', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/',
@@ -195,6 +197,16 @@ def test_html_security_and_product_metadata_checks():
     result = evaluate(html, 'https://example.com', 'https://example.com')
     assert next(e for e in result.evidence if e.title == 'Contenido mixto').status == 'warning'
     assert next(e for e in result.evidence if e.title == 'Datos estructurados del producto').status == 'observed'
+
+
+def test_website_profile_and_government_impersonation_signal():
+    html = '''<title>Trámites Gobierno</title><meta name="description" content="Paga tu trámite"><a href="https://www.gob.mx/a">Gobierno</a><a href="https://www.gob.mx/b">SAT</a><a href="https://www.gob.mx/c">Trámites</a><a href="https://www.gob.mx/d">Secretaría</a><form action="http://collector.example"><input type="password"></form>'''
+    profile = extract_website(html, 'https://tienda-ejemplo.com')
+    risk = evaluate_website(html, 'https://tienda-ejemplo.com', 'https://tienda-ejemplo.com', profile)
+    assert profile.title == 'Trámites Gobierno' and profile.sensitive_forms == 1
+    assert next(e for e in risk.evidence if e.title == 'Posible suplantación gubernamental').status == 'warning'
+    assert next(e for e in risk.evidence if e.title == 'Formularios y credenciales').status == 'warning'
+    assert risk.level == 'alto'
 
 
 def test_consistency_audit_reports_missing_identity_and_spec_changes():

@@ -1,10 +1,35 @@
 """Fictional offers and branches, never fed into real analyses."""
-from ..models import Analysis, Product, Branch, Risk, Evidence, ProductAttribute, StoreProfile
+from ..models import Analysis, Product, Branch, Risk, Evidence, ProductAttribute, StoreProfile, WebsiteProfile, DomainRegistration
 
 
 def populate(analysis: Analysis) -> None:
     stamp = '2026-09-12T12:00:00+00:00'
     evidence = [Evidence(title='Datos de ejemplo', status='unavailable', detail='Tiendas, precios e inventario ficticios. Las coordenadas son puntos ilustrativos en Monterrey, no sucursales reales.')]
+    if analysis.target == 'website':
+        analysis.website_profile = WebsiteProfile(
+            url='https://tienda-tramites.example', domain='tienda-tramites.example', title='Ofertas del Gobierno - Tienda Demo',
+            description='Ejemplo ficticio de un comercio que copia lenguaje institucional.', image='/demo-store.svg',
+            declared_organization='Apoyos Gobierno MX', sensitive_forms=1,
+        )
+        analysis.store_profile = StoreProfile(
+            name='Tienda institucional no verificada', domain='tienda-tramites.example', url='https://tienda-tramites.example',
+            description='Identidad ficticia para demostrar señales de posible suplantación.', image='/demo-store.svg',
+            seller_name='Operador no identificado', evidence=evidence,
+        )
+        analysis.domain_registration = DomainRegistration(
+            domain='tienda-tramites.example', lookup_url='https://rdap.org/domain/tienda-tramites.example', status='available',
+            created_at='2026-08-20T00:00:00Z', age_days=23, registrar='Registrador Demo', nameservers=['ns1.example'],
+            domain_statuses=['client transfer prohibited'], note='Datos RDAP ficticios para mostrar la interfaz; no corresponden a un dominio real.',
+        )
+        analysis.risk = Risk(level='alto', checked_at=stamp, explanation='El demo combina dominio reciente, lenguaje gubernamental en un dominio no oficial y captura de datos. Son señales ficticias para explicar el análisis.', evidence=[
+            Evidence(title='Conexión HTTPS', status='observed', source='https://tienda-tramites.example', detail='HTTPS ficticio; no demuestra legitimidad.'),
+            Evidence(title='Antigüedad del dominio', status='warning', source='https://rdap.org/domain/tienda-tramites.example', detail='El registro ficticio indica creación hace 23 días.'),
+            Evidence(title='Posible suplantación gubernamental', status='warning', source='https://tienda-tramites.example', detail='El contenido usa lenguaje gubernamental, pero el dominio no pertenece a una terminación oficial.'),
+            Evidence(title='Formularios y credenciales', status='warning', source='https://tienda-tramites.example', detail='El demo incluye un formulario sensible que requeriría verificar destino y operador.'),
+        ])
+        analysis.limitations = ['Demo ficticio: no se consultó ningún dominio ni organismo real.', 'Las señales requieren confirmación humana y no equivalen a una acusación de fraude.']
+        analysis.status = 'completed'
+        return
     base = dict(name='Sony WH-1000XM5', brand='Sony', model='WH-1000XM5', variant='Negro', condition='NewCondition', currency='MXN', checked_at=stamp, demo=True, evidence=evidence, image='/headphones.png', images=['/headphones.png'], description='Ejemplo ficticio para visualizar la ficha de producto y sus fuentes.', specifications=[ProductAttribute(name='cancelación de ruido', value='Declaración de ejemplo', source='https://example.com/audifonos'), ProductAttribute(name='conectividad', value='Declaración de ejemplo', source='https://example.com/audifonos')])
     analysis.product = Product(**base, id='demo-original', url='https://example.com/audifonos', store='Tienda de ejemplo', price=7999)
     analysis.store_profile = StoreProfile(name='Marketplace Demo', domain='demo.buenpaso.mx', url='https://example.com', description='Perfil ficticio que muestra cómo se presentan la empresa, la tienda y el vendedor.', image='/demo-store.svg', seller_name='Vendedor de ejemplo', seller_url='https://example.com/vendedor', contacts=['https://example.com/contacto'], policy_links=['https://example.com/devoluciones'], evidence=evidence)

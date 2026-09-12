@@ -429,6 +429,16 @@ small {
   gap: 10px;
 }
 
+.search-actions { min-width: 0; }
+.analysis-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.analysis-targets button { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 10px 12px; text-align: left; color: #475569; background: #f8fafc; border: 1px solid #dbe3ee; border-radius: 12px; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.analysis-targets button:hover { border-color: #93c5fd; }
+.analysis-targets button.active { color: #1d4ed8; background: #eff6ff; border-color: #60a5fa; box-shadow: 0 3px 12px rgba(37, 99, 235, .1); }
+.analysis-targets button > span { min-width: 0; }
+.analysis-targets strong, .analysis-targets small { display: block; }
+.analysis-targets strong { color: #1e293b; font-size: .78rem; }
+.analysis-targets small { margin-top: 2px; color: #64748b; font-size: .67rem; white-space: normal; }
+
 .url-field {
   display: flex;
   align-items: center;
@@ -764,6 +774,28 @@ small {
   background: var(--apple-card, #fff);
   overflow: hidden;
 }
+.website-audit-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .85fr); gap: 14px; margin-bottom: 14px; }
+.website-identity { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; background: #f8fbff; border: 1px solid #dbeafe; border-radius: 16px; }
+.website-logo { width: 58px; height: 58px; flex: 0 0 58px; display: grid; place-items: center; overflow: hidden; color: #1463d8; background: #fff; border: 1px solid #bfdbfe; border-radius: 13px; }
+.website-logo img { width: 100%; height: 100%; object-fit: contain; }
+.website-identity h2 { font-size: 1rem; line-height: 1.25; overflow-wrap: anywhere; }
+.website-identity p { margin: 4px 0; color: #1d4ed8; font-size: .8rem; font-weight: 700; }
+.website-identity small { display: block; color: #64748b; font-size: .72rem; line-height: 1.35; }
+.website-risk { margin: 0; }
+.web-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.web-facts article { min-width: 0; min-height: 92px; display: grid; grid-template-columns: auto 1fr; align-content: start; gap: 5px 8px; padding: 13px; background: #fff; border: 1px solid #dbeafe; border-radius: 14px; box-shadow: 0 4px 14px rgba(30, 64, 175, .05); }
+.web-facts svg { grid-row: span 2; color: #1463d8; }
+.web-facts span { color: #64748b; font-size: .67rem; font-weight: 700; text-transform: uppercase; letter-spacing: .035em; }
+.web-facts strong { color: #1e293b; font-size: .8rem; line-height: 1.35; overflow-wrap: anywhere; }
+.rdap-details { margin-bottom: 12px; border: 1px solid #dbeafe; border-radius: 14px; overflow: hidden; }
+.rdap-details summary { padding: 12px 14px; color: #1e40af; background: #f8fbff; cursor: pointer; font-size: .8rem; font-weight: 750; }
+.rdap-details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0; padding: 14px; }
+.rdap-details dl div { min-width: 0; }
+.rdap-details dt { color: #64748b; font-size: .68rem; text-transform: uppercase; }
+.rdap-details dd { margin: 3px 0 0; color: #1e293b; font-size: .78rem; overflow-wrap: anywhere; }
+.rdap-details > a, .rdap-details > small { margin: 0 14px 12px; }
+.rdap-details > a { display: inline-flex; align-items: center; gap: 4px; color: #1463d8; font-size: .76rem; font-weight: 700; }
+.rdap-details > small { display: block; color: #64748b; font-size: .7rem; }
 .investigation-heading {
   display: flex;
   align-items: center;
@@ -811,7 +843,8 @@ small {
 .investigation-panel > details > summary::after { content: "+"; float: right; font-size: 1.1rem; }.investigation-panel > details[open] > summary::after { content: "−"; }
 .merchant-links { display: flex; flex-wrap: wrap; gap: .5rem .9rem; }.research-disclaimer { display: block; margin-top: .8rem; color: #64748b; font-size: .72rem; line-height: 1.4; }
 @media (max-width: 980px) { .merchant-snapshot { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .investigation-grid, .merchant-snapshot { grid-template-columns: 1fr; }.product-research { border-right: 0; border-bottom: 1px solid #e2e8f0; }.gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }.spec-list, .merchant-facts { grid-template-columns: 1fr; } }
+@media (max-width: 980px) { .website-audit-header, .web-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .investigation-grid, .merchant-snapshot, .website-audit-header, .web-facts, .rdap-details dl { grid-template-columns: 1fr; }.product-research { border-right: 0; border-bottom: 1px solid #e2e8f0; }.gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }.spec-list, .merchant-facts { grid-template-columns: 1fr; }.analysis-targets { grid-template-columns: 1fr 1fr; }.analysis-targets button { align-items: flex-start; padding: 9px; }.analysis-targets small { display: none; } }
 
 /* --------------------------------------------------------------------------
    Flag Summary (3-Column Matte Grid)

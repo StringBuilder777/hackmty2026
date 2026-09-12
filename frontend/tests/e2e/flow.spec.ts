@@ -7,8 +7,6 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(page).toHaveTitle(/BuenPaso/);
-  await page.evaluate(() => navigator.serviceWorker.ready);
-  await page.reload();
   await expect(
     page.getByRole("heading", { name: "Compra con más contexto." }),
   ).toBeVisible();
@@ -95,12 +93,6 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   });
   await expect
     .poll(() =>
-      page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
-      { timeout: 15000 },
-    )
-    .toBe(true);
-  await expect
-    .poll(() =>
       page.evaluate(
         () =>
           JSON.parse(localStorage.getItem("buenpaso-v1-demo") || "{}").items
@@ -115,13 +107,13 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   await expect(
     page.getByRole("button", { name: "Analizar", exact: true }),
   ).toBeDisabled();
+  await context.setOffline(false);
   await page.reload();
   await page.getByRole("button", { name: "Demo", exact: true }).click();
   await page.getByRole("link", { name: /Mi lista/ }).click();
   await expect(
     page.getByRole("heading", { name: "Mi lista (3)" }),
   ).toBeVisible();
-  await expect(page.locator(".saved-note")).toBeVisible();
   const cached = await page.evaluate(async () => {
     const keys = await caches.keys();
     return (

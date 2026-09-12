@@ -18,16 +18,19 @@ import {
   LocateFixed,
   MapPin,
   Navigation,
+  PackageSearch,
   Route as RouteIcon,
   Search,
   ShieldQuestion,
   ShoppingBag,
   TriangleAlert,
+  GlobeLock,
   WifiOff,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   Analysis,
+  AnalysisTarget,
   BranchId,
   Mode,
   Point,
@@ -46,6 +49,7 @@ import ProductCard, { ProductImage } from "./ProductCard";
 import ShoppingList from "./ShoppingList";
 import RoutePanel from "./RoutePanel";
 import InvestigationPanel from "./InvestigationPanel";
+import WebsiteAuditPanel from "./WebsiteAuditPanel";
 
 const ShoppingMap = dynamic(() => import("./Map"), {
   ssr: false,
@@ -87,6 +91,7 @@ export default function Workspace() {
   const [mode, setMode] = useState<Mode>("real");
   const [url, setUrl] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [target, setTarget] = useState<AnalysisTarget>("product");
   const [items, setItems] = useState<Selection[]>([]);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -146,6 +151,7 @@ export default function Workspace() {
       if (snapshot) {
         setItems(snapshot.items);
         setAnalysis(snapshot.analysis);
+        setTarget(snapshot.analysis?.target ?? "product");
         setSavedAt(snapshot.savedAt);
       }
       setReady(true);
@@ -252,8 +258,19 @@ export default function Workspace() {
     setMode(next);
     setItems(snapshot?.items || []);
     setAnalysis(snapshot?.analysis || null);
+    setTarget(snapshot?.analysis?.target ?? target);
     setSavedAt(snapshot?.savedAt || null);
-    setUrl(next === "demo" ? "https://example.com/audifonos" : "");
+    setUrl(next === "demo" ? (target === "website" ? "https://tienda-tramites.example" : "https://example.com/audifonos") : "");
+  }
+
+  function chooseTarget(next: AnalysisTarget) {
+    if (next === target) return;
+    generation.current++;
+    setTarget(next);
+    setAnalysis(null);
+    setError("");
+    setSavedAt(null);
+    setUrl(mode === "demo" ? (next === "website" ? "https://tienda-tramites.example" : "https://example.com/audifonos") : "");
   }
 
   async function analyze(event: React.FormEvent) {
@@ -265,7 +282,7 @@ export default function Workspace() {
     setAnalysis(null);
     setSavedAt(null);
     try {
-      let result = await api<Analysis>("/analyses", { url, mode });
+      let result = await api<Analysis>("/analyses", { url, mode, target });
       for (let attempt = 0; attempt < 160; attempt++) {
         if (current !== generation.current || !alive.current) return;
         setAnalysis(result);
@@ -469,10 +486,19 @@ export default function Workspace() {
 
       {view === "explore" && (
       <section id="explorar" className="search-section">
-        <div>
+        <div className="search-copy">
           <h1>{t.search.heroTitle}</h1>
-          <p>{t.search.heroSubtitle}</p>
+          <p>{target === "website" ? (lang === "es" ? "Audita un dominio y busca señales de phishing o suplantación." : "Audit a domain for phishing or impersonation signals.") : t.search.heroSubtitle}</p>
         </div>
+        <div className="search-actions">
+          <div className="analysis-targets" aria-label={lang === "es" ? "Tipo de análisis" : "Analysis type"}>
+            <button type="button" className={target === "product" ? "active" : ""} aria-pressed={target === "product"} onClick={() => chooseTarget("product")}>
+              <PackageSearch size={19} /><span><strong>{lang === "es" ? "Producto" : "Product"}</strong><small>{lang === "es" ? "Precio, vendedor y alternativas" : "Price, seller and alternatives"}</small></span>
+            </button>
+            <button type="button" className={target === "website" ? "active" : ""} aria-pressed={target === "website"} onClick={() => chooseTarget("website")}>
+              <GlobeLock size={19} /><span><strong>{lang === "es" ? "Sitio web" : "Website"}</strong><small>{lang === "es" ? "Dominio, WHOIS y phishing" : "Domain, WHOIS and phishing"}</small></span>
+            </button>
+          </div>
         <form onSubmit={analyze} className="search-form">
           <label htmlFor="product-url" className="sr-only">
             {t.search.urlLabel}
@@ -484,7 +510,7 @@ export default function Workspace() {
               type="url"
               required
               maxLength={2048}
-              placeholder={t.search.urlPlaceholder}
+            placeholder={target === "website" ? (lang === "es" ? "Pega el enlace del sitio que quieres auditar" : "Paste the website you want to audit") : t.search.urlPlaceholder}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               disabled={running || !online}
@@ -499,6 +525,7 @@ export default function Workspace() {
             <ArrowRight size={16} />
           </button>
         </form>
+        </div>
       </section>
       )}
 
@@ -688,6 +715,9 @@ export default function Workspace() {
                 )}
               </section>
             </>
+          )}
+          {complete && (analysis.target ?? "product") === "website" && (
+            <WebsiteAuditPanel analysis={analysis} english={lang === "en"} />
           )}
           <footer className="panel-footer">
             {mode === "demo" ? t.footer.demoNotice : t.footer.realNotice}

@@ -1,6 +1,7 @@
 export type ProductId = string & { readonly __brand: "ProductId" };
 export type BranchId = string & { readonly __brand: "BranchId" };
 export type Mode = "real" | "demo";
+export type AnalysisTarget = "product" | "website";
 export interface Evidence {
   title: string;
   status: "observed" | "warning" | "unavailable";
@@ -24,6 +25,28 @@ export interface StoreProfile {
   policy_links: string[];
   social_links: string[];
   evidence: Evidence[];
+}
+export interface WebsiteProfile {
+  url: string;
+  domain: string;
+  title: string;
+  description: string | null;
+  image: string | null;
+  declared_organization: string | null;
+  sensitive_forms: number;
+}
+export interface DomainRegistration {
+  domain: string;
+  lookup_url: string;
+  status: "available" | "unavailable";
+  created_at: string | null;
+  updated_at: string | null;
+  expires_at: string | null;
+  age_days: number | null;
+  registrar: string | null;
+  nameservers: string[];
+  domain_statuses: string[];
+  note: string;
 }
 export interface Risk {
   level: "bajo" | "medio" | "alto" | "información insuficiente";
@@ -87,8 +110,11 @@ export interface Analysis {
     | "completed"
     | "error";
   created_at: string;
+  target: AnalysisTarget;
   product: Product | null;
   store_profile: StoreProfile | null;
+  website_profile: WebsiteProfile | null;
+  domain_registration: DomainRegistration | null;
   risk: Risk | null;
   alternatives: Product[];
   limitations: string[];

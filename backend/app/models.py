@@ -40,6 +40,32 @@ class StoreProfile(Model):
     evidence: list[Evidence] = Field(default_factory=list)
 
 
+class WebsiteProfile(Model):
+    """Public presentation data extracted from a website without executing JavaScript."""
+    url: str
+    domain: str
+    title: str
+    description: str | None = None
+    image: str | None = None
+    declared_organization: str | None = None
+    sensitive_forms: int = Field(default=0, ge=0)
+
+
+class DomainRegistration(Model):
+    """Normalized public RDAP/WHOIS-style registration data."""
+    domain: str
+    lookup_url: str
+    status: Literal['available', 'unavailable']
+    created_at: str | None = None
+    updated_at: str | None = None
+    expires_at: str | None = None
+    age_days: int | None = Field(default=None, ge=0)
+    registrar: str | None = None
+    nameservers: list[str] = Field(default_factory=list, max_length=12)
+    domain_statuses: list[str] = Field(default_factory=list, max_length=12)
+    note: str
+
+
 class Risk(Model):
     level: Literal['bajo', 'medio', 'alto', 'información insuficiente']
     explanation: str
@@ -99,6 +125,7 @@ class Product(Model):
 class AnalysisInput(Model):
     url: str = Field(min_length=8, max_length=2048)
     mode: Literal['real', 'demo'] = 'real'
+    target: Literal['product', 'website'] = 'product'
 
     @field_validator('url')
     @classmethod
@@ -111,10 +138,13 @@ class AnalysisInput(Model):
 class Analysis(Model):
     id: str
     mode: Literal['real', 'demo']
+    target: Literal['product', 'website'] = 'product'
     status: Literal['queued', 'extracting', 'evaluating', 'searching', 'completed', 'error'] = 'queued'
     created_at: str = Field(default_factory=now)
     product: Product | None = None
     store_profile: StoreProfile | None = None
+    website_profile: WebsiteProfile | None = None
+    domain_registration: DomainRegistration | None = None
     risk: Risk | None = None
     alternatives: list[Product] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)

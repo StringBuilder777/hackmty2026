@@ -6,7 +6,7 @@ import socket
 
 import aiohttp
 
-from ..models import AgentAssessment, Product, Risk
+from ..models import AgentAssessment, Product, Risk, WebsiteProfile
 from .http import bounded_json
 
 GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
@@ -26,7 +26,7 @@ def _schema() -> dict:
     }
 
 
-def _payload(risk: Risk, product: Product, alternatives: list[Product] | None = None) -> dict:
+def _payload(risk: Risk, product: Product | None, alternatives: list[Product] | None = None, website: WebsiteProfile | None = None) -> dict:
     alternatives = alternatives or []
     return {
         'contents': [{'parts': [{'text': json.dumps({
@@ -36,13 +36,21 @@ def _payload(risk: Risk, product: Product, alternatives: list[Product] | None = 
                 'o precio cuando estén presentes. Las opciones son resultados comparativos, no pruebas de confianza. '
                 'No inventes hechos, no declares una tienda segura y menciona incertidumbre cuando aplique. '
                 'La explicación debe ser clara y no superar 700 caracteres.'
+            ) if product else (
+                'Evalúa posibles señales de phishing, suplantación o sitio comprometido usando exclusivamente la evidencia técnica recibida. '
+                'No afirmes que el sitio es legítimo ni fraudulento sin evidencia suficiente. Distingue datos observados, advertencias e información no disponible. '
+                'La explicación debe ser clara y no superar 700 caracteres.'
             ),
             'product': {
                 'name': product.name[:200], 'store': product.store[:120], 'brand': product.brand,
                 'model': product.model, 'variant': product.variant, 'condition': product.condition,
                 'gtin': product.gtin, 'price': product.price, 'currency': product.currency,
                 'availability': product.availability[:160],
-            },
+            } if product else None,
+            'website': {
+                'title': website.title[:200], 'domain': website.domain[:253],
+                'organization': website.declared_organization, 'sensitive_forms': website.sensitive_forms,
+            } if website else None,
             'heuristic_level': risk.level,
             'evidence': [
                 {'title': item.title[:120], 'status': item.status, 'detail': item.detail[:500]}
@@ -77,12 +85,12 @@ def _parse(response: dict) -> AgentAssessment:
 
 
 async def assess(
-    risk: Risk, product: Product, alternatives: list[Product] | None = None,
+    risk: Risk, product: Product | None, alternatives: list[Product] | None = None, website: WebsiteProfile | None = None,
 ) -> tuple[AgentAssessment | None, str | None]:
     """Use the selected provider only when configured; failures never block analysis."""
     provider = os.getenv('AI_PROVIDER', 'bedrock').lower()
     if provider == 'bedrock':
-        return await _assess_bedrock(risk, product, alternatives)
+        return await _assess_bedrock(risk, product, alternatives, website)
     if provider != 'gemini':
         return None, 'La explicación por IA está desactivada o AI_PROVIDER no es compatible.'
     key = os.getenv('GEMINI_API_KEY')
@@ -101,7 +109,7 @@ async def assess(
             connector=connector, timeout=timeout, trust_env=False,
             headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
         ) as session:
-            async with session.post(url, json=_payload(risk, product, alternatives)) as response:
+            async with session.post(url, json=_payload(risk, product, alternatives, website)) as response:
                 if response.status != 200:
                     raise ValueError(f'Gemini respondió HTTP {response.status}.')
                 return _parse(await bounded_json(response, limit=128_000)), None
@@ -110,7 +118,7 @@ async def assess(
 
 
 async def _assess_bedrock(
-    risk: Risk, product: Product, alternatives: list[Product] | None,
+    risk: Risk, product: Product | None, alternatives: list[Product] | None, website: WebsiteProfile | None,
 ) -> tuple[AgentAssessment | None, str | None]:
     """Call Bedrock through Converse without giving the model network authority."""
     model = os.getenv('BEDROCK_MODEL_ID')
@@ -121,7 +129,7 @@ async def _assess_bedrock(
         from botocore.config import Config
         region = os.getenv('AWS_REGION', 'us-east-1')
         instruction = ('Responde exclusivamente JSON válido que satisfaga este esquema: ' + json.dumps(_schema(), ensure_ascii=False))
-        payload = _payload(risk, product, alternatives)['contents'][0]['parts'][0]['text']
+        payload = _payload(risk, product, alternatives, website)['contents'][0]['parts'][0]['text']
 
         def invoke() -> dict:
             client = boto3.client('bedrock-runtime', region_name=region, config=Config(connect_timeout=5, read_timeout=25, retries={'max_attempts': 2, 'mode': 'standard'}))

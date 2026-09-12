@@ -14,7 +14,9 @@ from .services.fetch import fetch_html
 from .services.extraction import extract
 from .services.store import inspect_store
 from .services.risk import audit_consistency, evaluate, compare_price
-from .services.domain import registration_evidence
+from .services.domain import registration_profile
+from .services.website import extract_website
+from .services.phishing import evaluate_website
 from .services.agent import assess
 from .services.search import alternatives
 from .services.branches import resolve
@@ -98,13 +100,27 @@ async def run_analysis(analysis: Analysis, url: str):
                     return
                 analysis.status = 'extracting'
                 html, final = await fetch_html(url)
-                analysis.product = extract(html, final)
                 analysis.store_profile = inspect_store(html, final)
-                analysis.product.branches = resolve(analysis.product)
                 analysis.status = 'evaluating'
+                analysis.domain_registration, domain_evidence = await registration_profile(final)
+                if analysis.target == 'website':
+                    analysis.website_profile = extract_website(html, final)
+                    analysis.risk = evaluate_website(html, url, final, analysis.website_profile)
+                    analysis.risk.evidence.append(domain_evidence)
+                    analysis.risk.evidence.extend(analysis.store_profile.evidence)
+                    analysis.status = 'searching'
+                    analysis.risk.agent_assessment, agent_note = await assess(
+                        analysis.risk, None, website=analysis.website_profile,
+                    )
+                    if agent_note:
+                        analysis.limitations.append(agent_note)
+                    analysis.limitations.append('El análisis revisa HTML accesible, dominio y RDAP. No ejecuta JavaScript, no inspecciona infraestructura interna y no puede garantizar que un sitio sea legítimo o fraudulento.')
+                    analysis.status = 'completed'
+                    return
+                analysis.product = extract(html, final)
+                analysis.product.branches = resolve(analysis.product)
                 analysis.risk = evaluate(html, url, final)
-                domain = await registration_evidence(final)
-                analysis.risk.evidence.append(domain)
+                analysis.risk.evidence.append(domain_evidence)
                 analysis.risk.evidence.extend(analysis.store_profile.evidence)
                 analysis.product.evidence = analysis.risk.evidence[:2]
                 analysis.status = 'searching'
@@ -140,7 +156,7 @@ async def start(payload: AnalysisInput, tasks: BackgroundTasks):
         oldest = next((key for key, (_, a) in jobs.items() if a.status in ('completed', 'error')), None)
         if oldest:
             del jobs[oldest]
-    analysis = Analysis(id=uuid4().hex, mode=payload.mode)
+    analysis = Analysis(id=uuid4().hex, mode=payload.mode, target=payload.target)
     jobs[analysis.id] = (clock, analysis)
     tasks.add_task(run_analysis, analysis, payload.url)
     return analysis
