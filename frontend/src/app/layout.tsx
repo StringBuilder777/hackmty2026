@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { LangProvider } from "@/lib/i18n";
 export const metadata: Metadata = {
   title: "BuenPaso · Compra con más contexto",
   description:
@@ -17,8 +18,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es">
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        <LangProvider>{children}</LangProvider>
+      </body>
     </html>
   );
 }

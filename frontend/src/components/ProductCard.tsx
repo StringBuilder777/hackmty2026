@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Product } from "@/lib/types";
 import { dateLabel, formatMoney, safeHref } from "@/lib/shopping";
+import { useLang } from "@/lib/i18n";
 import EvidenceList from "./EvidenceList";
 export function ProductImage({
   product,
@@ -16,6 +17,7 @@ export function ProductImage({
   product: Product;
   online: boolean;
 }) {
+  const { t } = useLang();
   const source = product.demo
     ? "/headphones.png"
     : online
@@ -31,7 +33,7 @@ export function ProductImage({
           src={source}
           alt={
             product.demo
-              ? "Ilustración de audífonos para el demo"
+              ? t.productCard.demoAlt
               : product.name
           }
           loading="lazy"
@@ -41,7 +43,7 @@ export function ProductImage({
           }}
         />
       ) : (
-        <Headphones size={32} aria-label="Imagen no disponible" />
+        <Headphones size={32} aria-label={t.productCard.imageUnavailable} />
       )}
     </div>
   );
@@ -57,6 +59,7 @@ export default function ProductCard({
   online: boolean;
   onAdd: () => void;
 }) {
+  const { t } = useLang();
   return (
     <article className={`offer ${added ? "offer-added" : ""}`}>
       <div className="offer-main">
@@ -70,60 +73,62 @@ export default function ProductCard({
               <ShoppingBag size={13} />
             )}
             {product.branches.length
-              ? `${product.branches.length} sucursal${product.branches.length > 1 ? "es" : ""} · inventario por verificar`
-              : "Sin sucursal documentada"}
+              ? t.productCard.branchesInfo(product.branches.length)
+              : t.productCard.noBranches}
           </span>
           <span className={`match ${product.match}`}>
             {product.match === "identical"
-              ? "Producto idéntico"
+              ? t.productCard.matchIdentical
               : product.match === "original"
-                ? "Producto consultado"
-                : "Producto similar"}
+                ? t.productCard.matchOriginal
+                : t.productCard.matchSimilar}
           </span>
         </div>
         <div className="offer-price">
           <strong>{formatMoney(product.price, product.currency)}</strong>
           <small>
             {product.shipping === null
-              ? "Envío por verificar"
-              : `Envío ${formatMoney(product.shipping, product.currency)}`}
+              ? t.productCard.shippingPending
+              : t.productCard.shippingLabel(formatMoney(product.shipping, product.currency))}
           </small>
         </div>
         <button
           className="add-button"
-          aria-label={`${added ? "Agregado" : "Agregar"} ${product.store}`}
+          aria-label={t.productCard.addAria(added, product.store)}
           disabled={added}
           onClick={onAdd}
         >
           {added && <Check size={16} />}
-          <span>{added ? "Agregado" : "Agregar"}</span>
+          <span>{added ? t.productCard.added : t.productCard.add}</span>
         </button>
       </div>
       <details className="offer-details">
-        <summary>Detalles del producto y fuente</summary>
+        <summary>{t.productCard.detailsSummary}</summary>
         <div>
           <strong>{product.name}</strong>
           <p>
             {[product.brand, product.model, product.variant, product.condition]
               .filter(Boolean)
-              .join(" · ") || "Marca, modelo, variante y condición pendientes."}
+              .join(" · ") || t.productCard.specsPending}
           </p>
           <p>
-            SKU: {product.sku || "desconocido"} · GTIN:{" "}
-            {product.gtin || "desconocido"}
+            {t.productCard.skuGtin(
+              product.sku || t.productCard.unknown,
+              product.gtin || t.productCard.unknown,
+            )}
           </p>
           <p>{product.match_reason}</p>
           <p>
-            {product.availability}. Consulta: {dateLabel(product.checked_at)}.
+            {product.availability}. {t.productCard.checkedAt(dateLabel(product.checked_at))}
           </p>
-          <p>Total con envío: {formatMoney(product.total, product.currency)}</p>
+          <p>{t.productCard.totalWithShipping(formatMoney(product.total, product.currency))}</p>
           {safeHref(product.url) && (
             <a
               href={safeHref(product.url)}
               target="_blank"
               rel="noopener noreferrer"
             >
-              {product.demo ? "Enlace de ejemplo" : "Ver tienda"}{" "}
+              {product.demo ? t.productCard.exampleLink : t.productCard.viewStore}{" "}
               <ExternalLink size={12} />
             </a>
           )}

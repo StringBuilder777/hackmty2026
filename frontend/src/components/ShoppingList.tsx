@@ -1,6 +1,7 @@
 import { MapPin, ShoppingBag, X } from "lucide-react";
 import type { Selection, BranchId, ProductId } from "@/lib/types";
 import { formatMoney, totals, safeHref } from "@/lib/shopping";
+import { useLang } from "@/lib/i18n";
 export default function ShoppingList({
   items,
   active,
@@ -14,12 +15,13 @@ export default function ShoppingList({
   onBranch: (id: ProductId, branch: BranchId | null) => void;
   onFocus: (id: BranchId) => void;
 }) {
+  const { t } = useLang();
   const total = totals(items);
   return (
     <section id="mi-lista" className="shopping-list">
       <div className="section-heading">
         <h2>
-          Mi lista <span>({items.length})</span>
+          {t.shoppingList.title} <span>({items.length})</span>
         </h2>
         <ShoppingBag size={19} />
       </div>
@@ -27,9 +29,9 @@ export default function ShoppingList({
         <div className="list-empty">
           <ShoppingBag size={24} />
           <p>
-            Tu próxima compra empieza aquí.
+            {t.shoppingList.emptyTitle}
             <br />
-            <span>Agrega una opción para organizar tu recorrido.</span>
+            <span>{t.shoppingList.emptySub}</span>
           </p>
         </div>
       )}
@@ -44,13 +46,13 @@ export default function ShoppingList({
               <div>
                 <strong>{p.name}</strong>
                 <small>
-                  {p.store} · {p.variant || "Variante pendiente"}
+                  {p.store} · {p.variant || t.shoppingList.pendingVariant}
                 </small>
               </div>
               <strong>{formatMoney(p.price, p.currency)}</strong>
               <button
                 className="icon-button"
-                aria-label={`Quitar ${p.store}`}
+                aria-label={t.shoppingList.removeAria(p.store)}
                 onClick={() => onRemove(p.id)}
               >
                 <X size={16} />
@@ -59,9 +61,9 @@ export default function ShoppingList({
             {p.branches.length > 0 ? (
               <div className="branch-picker">
                 <label>
-                  Sucursal
+                  {t.shoppingList.branchLabel}
                   <select
-                    aria-label={`Sucursal de ${p.store}`}
+                    aria-label={t.shoppingList.branchAria(p.store)}
                     value={branchId || ""}
                     onChange={(e) =>
                       onBranch(
@@ -70,7 +72,7 @@ export default function ShoppingList({
                       )
                     }
                   >
-                    <option value="">Solo compra en línea</option>
+                    <option value="">{t.shoppingList.onlineOnlyOption}</option>
                     {p.branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
@@ -84,20 +86,20 @@ export default function ShoppingList({
                       className="text-button"
                       onClick={() => onFocus(branch.id)}
                     >
-                      <MapPin size={13} /> Ver en mapa
+                      <MapPin size={13} /> {t.shoppingList.seeOnMap}
                     </button>
                     <small>{branch.address}</small>
                     <small>
                       {branch.inventory === "confirmed"
-                        ? `Inventario reportado el ${branch.inventory_checked_at}; confirma antes de salir.`
-                        : "Inventario en sucursal pendiente de verificar."}{" "}
+                        ? t.shoppingList.inventoryConfirmed(branch.inventory_checked_at)
+                        : t.shoppingList.inventoryPending}{" "}
                       {safeHref(branch.source) && (
                         <a
                           href={safeHref(branch.source)}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          Fuente
+                          {t.shoppingList.source}
                         </a>
                       )}
                     </small>
@@ -106,7 +108,7 @@ export default function ShoppingList({
               </div>
             ) : (
               <small className="online-only">
-                En línea · no genera una parada
+                {t.shoppingList.onlineOnly}
               </small>
             )}
           </article>
@@ -115,17 +117,16 @@ export default function ShoppingList({
       {items.length > 0 && (
         <div className="total">
           <div>
-            <small>Total conocido</small>
+            <small>{t.shoppingList.totalKnown}</small>
             <strong>{formatMoney(total.known)}</strong>
           </div>
           <p>
             {total.pending
-              ? `${total.pending} costo(s) pendiente(s) de verificar.`
-              : "Precios y envíos conocidos."}
-            {total.foreign > 0 &&
-              " Otras monedas no se convierten ni se suman."}
+              ? t.shoppingList.pendingCosts(total.pending)
+              : t.shoppingList.pricesKnown}
+            {total.foreign > 0 && t.shoppingList.otherCurrencies}
             <br />
-            El total final puede cambiar al comprar.
+            {t.shoppingList.totalDisclaimer}
           </p>
         </div>
       )}

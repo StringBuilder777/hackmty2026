@@ -6,17 +6,19 @@ import {
 } from "lucide-react";
 import type { Evidence } from "@/lib/types";
 import { safeHref } from "@/lib/shopping";
+import { useLang } from "@/lib/i18n";
 export default function EvidenceList({
   evidence,
-  label = "Ver evidencias",
+  label,
 }: {
   evidence: Evidence[];
   label?: string;
 }) {
+  const { t } = useLang();
   return (
     <details className="evidence">
       <summary>
-        {label} <span>{evidence.length}</span>
+        {label ?? t.evidenceList.defaultLabel} <span>{evidence.length}</span>
       </summary>
       <div className="evidence-body">
         {evidence.map((item, i) => (
@@ -37,7 +39,7 @@ export default function EvidenceList({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Consultar fuente <ExternalLink size={12} />
+                  {t.evidenceList.checkSource} <ExternalLink size={12} />
                 </a>
               )}
             </div>
