@@ -18,6 +18,28 @@ class Evidence(Model):
     source: str | None = None
 
 
+class ProductAttribute(Model):
+    """A declared specification, keeping the page that supplied it."""
+    name: str = Field(min_length=1, max_length=120)
+    value: str = Field(min_length=1, max_length=500)
+    source: str
+
+
+class StoreProfile(Model):
+    """Publicly declared store and seller context; it is not an identity proof."""
+    name: str
+    domain: str
+    url: str
+    description: str | None = None
+    image: str | None = None
+    seller_name: str | None = None
+    seller_url: str | None = None
+    contacts: list[str] = Field(default_factory=list, max_length=8)
+    policy_links: list[str] = Field(default_factory=list, max_length=8)
+    social_links: list[str] = Field(default_factory=list, max_length=8)
+    evidence: list[Evidence] = Field(default_factory=list)
+
+
 class Risk(Model):
     level: Literal['bajo', 'medio', 'alto', 'información insuficiente']
     explanation: str
@@ -52,6 +74,9 @@ class Product(Model):
     url: str
     store: str
     image: str | None = None
+    images: list[str] = Field(default_factory=list, max_length=12)
+    description: str | None = Field(default=None, max_length=2500)
+    specifications: list[ProductAttribute] = Field(default_factory=list, max_length=40)
     brand: str | None = None
     model: str | None = None
     variant: str | None = None
@@ -89,6 +114,7 @@ class Analysis(Model):
     status: Literal['queued', 'extracting', 'evaluating', 'searching', 'completed', 'error'] = 'queued'
     created_at: str = Field(default_factory=now)
     product: Product | None = None
+    store_profile: StoreProfile | None = None
     risk: Risk | None = None
     alternatives: list[Product] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)

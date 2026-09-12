@@ -10,6 +10,7 @@ from app.services.extraction import extract
 from app.services.risk import audit_consistency, comparable_host, evaluate
 from app.services.domain import _creation_date
 from app.services.agent import _parse, _payload
+from app.services.store import inspect_store
 
 @pytest.mark.parametrize('url', [
     'file:///etc/passwd', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/',
@@ -117,6 +118,41 @@ def test_extraction_preserves_unknown_shipping_and_unsafe_image():
     assert p.price == 5999 and p.shipping is None and p.total is None and p.image is None
 
 
+def test_extraction_keeps_image_gallery_description_and_declared_specifications():
+    html = '''<script type="application/ld+json">{"@type":"Product","name":"Audífonos","description":"Cancelación de ruido","image":["/one.jpg", "/two.jpg"],"offers":{"price":"100","priceCurrency":"MXN"}}</script><table><tr><th>Impedancia</th><td>32 ohms</td></tr></table>'''
+    p = extract(html, 'https://shop.example/item')
+    assert p.images == ['https://shop.example/one.jpg', 'https://shop.example/two.jpg']
+    assert p.description == 'Cancelación de ruido' and p.specifications[0].name == 'impedancia'
+
+
+def test_store_profile_labels_declarations_without_claiming_identity():
+    html = '''<script type="application/ld+json">{"@type":"Organization","name":"Tienda Ejemplo","description":"Comercio de tecnología","logo":"/logo.png"}</script><a href="/contacto">Contacto</a><a href="/devoluciones">Devoluciones</a><a href="https://instagram.com/tienda">Instagram</a>'''
+    store = inspect_store(html, 'https://shop.example/product')
+    assert store.name == 'Tienda Ejemplo' and store.image == 'https://shop.example/logo.png'
+    assert len(store.contacts) == 1 and len(store.policy_links) == 1 and len(store.social_links) == 1
+
+
+def test_store_profile_extracts_a_publicly_declared_marketplace_seller():
+    html = '''<script type="application/ld+json">{"@type":"Product","offers":{"seller":{"name":"Vendedor MX","url":"/seller/mx"}}}</script><div id="merchantInfo">Vendido por <a href="/seller/mx">Vendedor MX</a></div>'''
+    store = inspect_store(html, 'https://market.example/product')
+    assert store.seller_name == 'Vendedor MX'
+    assert store.seller_url == 'https://market.example/seller/mx'
+
+
+def test_store_profile_uses_marketplace_seller_dom_fallback():
+    html = '''<div id="tabular-buybox-truncate-1">Vendido por <a href="/sp?seller=ABC">Comercializadora Norte</a></div>'''
+    store = inspect_store(html, 'https://www.amazon.com.mx/product')
+    assert store.seller_name == 'Comercializadora Norte'
+    assert store.seller_url == 'https://www.amazon.com.mx/sp?seller=ABC'
+
+
+def test_store_profile_uses_the_store_published_icon():
+    html = '''<link rel="icon" href="/assets/store-icon.png"><meta property="og:site_name" content="Walmart México">'''
+    store = inspect_store(html, 'https://www.walmart.com.mx/product')
+    assert store.name == 'Walmart México'
+    assert store.image == 'https://www.walmart.com.mx/assets/store-icon.png'
+
+
 def test_amazon_style_html_fallback_extracts_commercial_fields():
     html = '''<html><span id="productTitle">AOC Monitor 22 Pulgadas</span>
     <a id="bylineInfo">Visita la tienda de AOC</a><div class="a-price"><span class="a-offscreen">$1,300.00</span></div>
@@ -140,6 +176,12 @@ def test_www_redirect_is_same_domain_and_store_reviews_are_detected():
     assert next(e for e in result.evidence if e.title == 'Consistencia del dominio').status == 'observed'
     review = next(e for e in result.evidence if e.title == 'Reseñas en la tienda')
     assert review.status == 'observed' and '294' in review.detail
+
+
+def test_amazon_short_link_is_resolved_without_false_domain_warning():
+    result = evaluate('<p>shop</p>', 'https://a.co/d/example', 'https://www.amazon.com.mx/dp/example')
+    domain = next(e for e in result.evidence if e.title == 'Consistencia del dominio')
+    assert domain.status == 'observed' and result.level == 'información insuficiente'
 
 
 def test_return_to_query_is_not_mistaken_for_refund_policy():

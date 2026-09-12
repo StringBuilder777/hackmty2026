@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from .models import AnalysisInput, Analysis, RouteInput
 from .services.fetch import fetch_html
 from .services.extraction import extract
+from .services.store import inspect_store
 from .services.risk import audit_consistency, evaluate, compare_price
 from .services.domain import registration_evidence
 from .services.agent import assess
@@ -98,11 +99,13 @@ async def run_analysis(analysis: Analysis, url: str):
                 analysis.status = 'extracting'
                 html, final = await fetch_html(url)
                 analysis.product = extract(html, final)
+                analysis.store_profile = inspect_store(html, final)
                 analysis.product.branches = resolve(analysis.product)
                 analysis.status = 'evaluating'
                 analysis.risk = evaluate(html, url, final)
                 domain = await registration_evidence(final)
                 analysis.risk.evidence.append(domain)
+                analysis.risk.evidence.extend(analysis.store_profile.evidence)
                 analysis.product.evidence = analysis.risk.evidence[:2]
                 analysis.status = 'searching'
                 try:

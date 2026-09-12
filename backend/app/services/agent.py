@@ -1,4 +1,4 @@
-"""Optional Gemini explanation over bounded, already-verified evidence."""
+"""Optional AI explanation over bounded, already-verified evidence."""
 import asyncio
 import json
 import os
@@ -11,6 +11,19 @@ from .http import bounded_json
 
 GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 ALLOWED_MODELS = {'gemini-2.5-flash', 'gemini-2.5-flash-lite'}
+
+
+def _schema() -> dict:
+    return {
+        'type': 'object',
+        'properties': {
+            'level': {'type': 'string', 'enum': ['bajo', 'medio', 'alto', 'información insuficiente']},
+            'explanation': {'type': 'string'},
+            'limitations': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 4},
+        },
+        'required': ['level', 'explanation'],
+        'additionalProperties': False,
+    }
 
 
 def _payload(risk: Risk, product: Product, alternatives: list[Product] | None = None) -> dict:
@@ -50,15 +63,7 @@ def _payload(risk: Risk, product: Product, alternatives: list[Product] | None = 
             'thinkingConfig': {'thinkingBudget': 0},
             'maxOutputTokens': 1200,
             'responseMimeType': 'application/json',
-            'responseJsonSchema': {
-                'type': 'object',
-                'properties': {
-                    'level': {'type': 'string', 'enum': ['bajo', 'medio', 'alto', 'información insuficiente']},
-                    'explanation': {'type': 'string'},
-                    'limitations': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 4},
-                },
-                'required': ['level', 'explanation'],
-            },
+            'responseJsonSchema': _schema(),
         },
     }
 
@@ -74,7 +79,12 @@ def _parse(response: dict) -> AgentAssessment:
 async def assess(
     risk: Risk, product: Product, alternatives: list[Product] | None = None,
 ) -> tuple[AgentAssessment | None, str | None]:
-    """Use Gemini only when explicitly configured; failures never block analysis."""
+    """Use the selected provider only when configured; failures never block analysis."""
+    provider = os.getenv('AI_PROVIDER', 'bedrock').lower()
+    if provider == 'bedrock':
+        return await _assess_bedrock(risk, product, alternatives)
+    if provider != 'gemini':
+        return None, 'La explicación por IA está desactivada o AI_PROVIDER no es compatible.'
     key = os.getenv('GEMINI_API_KEY')
     if not key:
         return None, 'La explicación por IA no está configurada (falta GEMINI_API_KEY).'
@@ -97,3 +107,33 @@ async def assess(
                 return _parse(await bounded_json(response, limit=128_000)), None
     except (aiohttp.ClientError, TimeoutError, ValueError):
         return None, 'La explicación por IA no estuvo disponible para este análisis; conserva las señales verificadas.'
+
+
+async def _assess_bedrock(
+    risk: Risk, product: Product, alternatives: list[Product] | None,
+) -> tuple[AgentAssessment | None, str | None]:
+    """Call Bedrock through Converse without giving the model network authority."""
+    model = os.getenv('BEDROCK_MODEL_ID')
+    if not model:
+        return None, 'La explicación por IA no está configurada (falta BEDROCK_MODEL_ID).'
+    try:
+        import boto3
+        from botocore.config import Config
+        region = os.getenv('AWS_REGION', 'us-east-1')
+        instruction = ('Responde exclusivamente JSON válido que satisfaga este esquema: ' + json.dumps(_schema(), ensure_ascii=False))
+        payload = _payload(risk, product, alternatives)['contents'][0]['parts'][0]['text']
+
+        def invoke() -> dict:
+            client = boto3.client('bedrock-runtime', region_name=region, config=Config(connect_timeout=5, read_timeout=25, retries={'max_attempts': 2, 'mode': 'standard'}))
+            return client.converse(
+                modelId=model,
+                system=[{'text': instruction}],
+                messages=[{'role': 'user', 'content': [{'text': payload}]}],
+                inferenceConfig={'maxTokens': 1200, 'temperature': 0},
+            )
+
+        response = await asyncio.wait_for(asyncio.to_thread(invoke), timeout=31)
+        text = response['output']['message']['content'][0]['text']
+        return AgentAssessment.model_validate(json.loads(text)), None
+    except (ImportError, KeyError, TypeError, ValueError, json.JSONDecodeError, TimeoutError):
+        return None, 'La explicación de Bedrock no estuvo disponible; conserva las señales verificadas.'

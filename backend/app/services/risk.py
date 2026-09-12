@@ -10,15 +10,25 @@ def comparable_host(value: str | None) -> str:
     return (value or '').lower().removeprefix('www.')
 
 
+def expected_short_link(source: str, final: str) -> bool:
+    """Known retailer short links are redirects, not a domain-mismatch warning."""
+    source_host, final_host = comparable_host(urlsplit(source).hostname), comparable_host(urlsplit(final).hostname)
+    return source_host == 'a.co' and final_host.endswith('amazon.com.mx')
+
+
 def evaluate(html: str, original: str, final: str) -> Risk:
     soup = BeautifulSoup(html, 'html.parser')
     https = urlsplit(final).scheme == 'https'
     same = comparable_host(urlsplit(original).hostname) == comparable_host(urlsplit(final).hostname)
+    redirected = not same
+    expected_redirect = redirected and expected_short_link(original, final)
     evidence = [
         Evidence(title='Conexión HTTPS', status='observed' if https else 'warning', source=final,
                  detail='La conexión está cifrada. HTTPS por sí solo no demuestra confiabilidad.' if https else 'La página no utiliza HTTPS.'),
-        Evidence(title='Consistencia del dominio', status='observed' if same else 'warning', source=final,
-                 detail='El dominio final coincide con el solicitado; esto no autentica al vendedor.' if same else 'La página redirigió a otro dominio. Comprueba que corresponde al vendedor.'),
+        Evidence(title='Consistencia del dominio', status='observed' if same or expected_redirect else 'warning', source=final,
+                 detail=('El enlace corto redirigió al dominio de Amazon; se analizó el destino final. Esto no autentica al vendedor.' if expected_redirect
+                         else 'El dominio final coincide con el solicitado; esto no autentica al vendedor.' if same
+                         else 'La página redirigió a otro dominio. Comprueba que corresponde al vendedor.')),
     ]
     for title, words in [('Contacto e identidad', ('contacto', 'contact', 'nosotros', 'about')),
                           ('Devoluciones', ('devoluc', 'return', 'reembolso')),
@@ -63,8 +73,9 @@ def evaluate(html: str, original: str, final: str) -> Risk:
     ))
     for title in ['Reputación y reseñas externas', 'Posibles suplantaciones']:
         evidence.append(Evidence(title=title, status='unavailable', detail='No hay una fuente independiente verificada en este MVP.'))
-    return Risk(level='medio' if not https or not same else 'información insuficiente',
-                explanation='Se detectaron señales que requieren atención; no constituyen una prueba de fraude.' if not https or not same else 'La información técnica disponible no permite confirmar la confiabilidad del vendedor.', evidence=evidence)
+    suspicious_redirect = redirected and not expected_redirect
+    return Risk(level='medio' if not https or suspicious_redirect else 'información insuficiente',
+                explanation='Se detectaron señales que requieren atención; no constituyen una prueba de fraude.' if not https or suspicious_redirect else 'La información técnica disponible no permite confirmar la confiabilidad del vendedor.', evidence=evidence)
 
 
 def _tokens(value: str) -> set[str]:

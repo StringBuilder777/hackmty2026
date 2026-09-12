@@ -68,6 +68,21 @@ class SearchProvider(Protocol):
     async def urls(self, query: str) -> list[str]: ...
 
 
+def queries(product: Product) -> list[str]:
+    """Use stable identifiers first, then progressively broader product queries."""
+    values: list[str] = []
+    if product.gtin:
+        values.append(f'{product.gtin} comprar México')
+    if product.sku:
+        values.append(f'{product.brand or ""} {product.sku} comprar México'.strip())
+    identity = ' '.join(filter(None, [product.brand, product.model, product.variant, 'comprar México']))
+    if identity:
+        values.append(identity)
+    name_tokens = [part for part in re.findall(r'[A-Za-z0-9-]+', product.name) if len(part) > 2]
+    values.append(' '.join(name_tokens[:10] + ['comprar', 'México']))
+    return list(dict.fromkeys(value for value in values if value))[:4]
+
+
 class BraveSearch:
     async def urls(self, query: str) -> list[str]:
         key = os.getenv('BRAVE_SEARCH_API_KEY')
@@ -83,8 +98,8 @@ class BraveSearch:
 
 async def alternatives(product: Product, provider: SearchProvider | None = None) -> tuple[list[Product], list[str]]:
     provider = provider or BraveSearch()
-    query = ' '.join(filter(None, [product.brand, product.model or product.name, product.variant, 'comprar México']))
-    urls = list(dict.fromkeys(await provider.urls(query)))
+    results = await asyncio.gather(*(provider.urls(query) for query in queries(product)), return_exceptions=True)
+    urls = list(dict.fromkeys(url for batch in results if isinstance(batch, list) for url in batch if isinstance(url, str)))
     async def one(url: str) -> Product | None:
         if canonical_url(url) == canonical_url(product.url):
             return None

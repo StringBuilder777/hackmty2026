@@ -1,12 +1,13 @@
 """Fictional offers and branches, never fed into real analyses."""
-from ..models import Analysis, Product, Branch, Risk, Evidence
+from ..models import Analysis, Product, Branch, Risk, Evidence, ProductAttribute, StoreProfile
 
 
 def populate(analysis: Analysis) -> None:
     stamp = '2026-09-12T12:00:00+00:00'
     evidence = [Evidence(title='Datos de ejemplo', status='unavailable', detail='Tiendas, precios e inventario ficticios. Las coordenadas son puntos ilustrativos en Monterrey, no sucursales reales.')]
-    base = dict(name='Sony WH-1000XM5', brand='Sony', model='WH-1000XM5', variant='Negro', condition='NewCondition', currency='MXN', checked_at=stamp, demo=True, evidence=evidence, image='/headphones.png')
+    base = dict(name='Sony WH-1000XM5', brand='Sony', model='WH-1000XM5', variant='Negro', condition='NewCondition', currency='MXN', checked_at=stamp, demo=True, evidence=evidence, image='/headphones.png', images=['/headphones.png'], description='Ejemplo ficticio para visualizar la ficha de producto y sus fuentes.', specifications=[ProductAttribute(name='cancelación de ruido', value='Declaración de ejemplo', source='https://example.com/audifonos'), ProductAttribute(name='conectividad', value='Declaración de ejemplo', source='https://example.com/audifonos')])
     analysis.product = Product(**base, id='demo-original', url='https://example.com/audifonos', store='Tienda de ejemplo', price=7999)
+    analysis.store_profile = StoreProfile(name='Marketplace Demo', domain='demo.buenpaso.mx', url='https://example.com', description='Perfil ficticio que muestra cómo se presentan la empresa, la tienda y el vendedor.', image='/demo-store.svg', seller_name='Vendedor de ejemplo', seller_url='https://example.com/vendedor', contacts=['https://example.com/contacto'], policy_links=['https://example.com/devoluciones'], evidence=evidence)
     analysis.risk = Risk(level='información insuficiente', checked_at=stamp, explanation='Este ejemplo muestra cómo leer las señales. No es una evaluación de una tienda real.', evidence=[
         Evidence(title='Conexión HTTPS', status='observed', source='https://example.com', detail='Señal ilustrativa. HTTPS por sí solo no demuestra confiabilidad.'), *evidence,
         Evidence(title='Reputación, identidad y políticas', status='unavailable', detail='Sin verificaciones reales en modo demo.')])

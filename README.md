@@ -48,7 +48,8 @@ Los datos demo residen exclusivamente en `backend/app/services/demo.py`: tiendas
 ## Qué funciona con datos reales
 
 - Descarga limitada de HTML público y extracción de Product/Offer en JSON-LD, título y metadatos. No ejecuta JavaScript ni evade autenticación o antibots.
-- Marca, modelo, color/variante, condición, SKU/GTIN, precio, moneda, imagen y disponibilidad **declarada** cuando la página los publica.
+- Marca, modelo, color/variante, condición, SKU/GTIN, precio, moneda, disponibilidad, descripción, galería y especificaciones **declaradas** cuando la página los publica. Cada especificación conserva la URL de la página que la declaró.
+- Perfil público de tienda/vendedor: nombre y descripción estructurados, logo, dominio final, enlaces de contacto, políticas y redes sociales. Encontrar esos datos no verifica la identidad legal, el contenido de las políticas ni la reputación externa.
 - Envío extraído únicamente de una tarifa estructurada inequívoca para México y en la misma moneda. Precio y envío desconocidos permanecen `null`; nunca se interpretan como cero. Otras monedas se muestran en su moneda original y se excluyen del total en MXN, sin conversión inventada.
 - HTTPS, dominio final y presencia de enlaces de contacto, devoluciones y envío. Encontrar un enlace no verifica su contenido ni la identidad del vendedor.
 - Comparación de precio con ofertas idénticas en la misma moneda, si se obtienen. El umbral del 40% inferior a la mediana es una señal heurística, no prueba de fraude.
@@ -66,7 +67,10 @@ Credenciales exclusivamente en `backend/.env`, ignorado por Git y excluido de la
 | Variable | Uso | Predeterminado / pendiente |
 |---|---|---|
 | `BRAVE_SEARCH_API_KEY` | Búsqueda real mediante Brave Search | Sin clave: análisis funciona y explica exactamente qué falta; no se fabrican alternativas. |
-| `GEMINI_API_KEY` | Explicación complementaria de gravedad basada en señales ya verificadas | Opcional; nunca se expone al frontend. Sin clave, el análisis sigue funcionando. |
+| `AI_PROVIDER` | Proveedor opcional para interpretar evidencia verificada | `bedrock`; usar `gemini` sólo para la integración heredada. Nunca hace scraping ni decide hechos. |
+| `BEDROCK_MODEL_ID` | Modelo de Amazon Bedrock para explicación estructurada | Requerido si `AI_PROVIDER=bedrock`; habilitar el modelo y permisos IAM en la región elegida. |
+| `AWS_REGION` | Región de Bedrock | `us-east-1`. Las credenciales se obtienen del rol IAM/entorno de AWS y nunca llegan al frontend. |
+| `GEMINI_API_KEY` | Explicación complementaria heredada | Opcional; nunca se expone al frontend. |
 | `GEMINI_MODEL` | Modelo Gemini autorizado para la explicación | `gemini-2.5-flash` o `gemini-2.5-flash-lite`. |
 | `MAX_HTML_BYTES` | Límite del HTML descomprimido por página | `8388608` (8 MiB), limitado internamente al rango de 1–16 MiB. |
 | `ROUTE_PROVIDER` | `osrm` u `ors` | `osrm` |
@@ -79,6 +83,8 @@ Credenciales exclusivamente en `backend/.env`, ignorado por Git y excluido de la
 Para sucursales reales, crear `backend/data/branches.json` usando el esquema de `branches.example.json`, reemplazando TODOS los valores ilustrativos por datos y enlaces documentados. Configurar `/app/data/branches.json` como `BRANCH_CATALOG_PATH` y reconstruir el contenedor. Asociar una sucursal a una tienda no confirma inventario. Solo se conserva `confirmed` si existe un GTIN coincidente y fecha de comprobación; aun así la interfaz pide confirmar antes de salir. El MVP no dispone de un servicio de inventario ni de geocodificación automática. Con catálogo vacío no hay paradas reales verificadas.
 
 Los adaptadores de búsqueda y rutas usan interfaces (`SearchProvider`, `RouteProvider`) reemplazables. Brave consulta hasta diez resultados y extrae sus páginas públicas; conserva hasta ocho opciones relacionadas mediante identificadores y similitud de nombre. Una opción sin precio solo se conserva cuando la página publica metadatos comerciales como marca, SKU, GTIN o condición, para evitar presentar artículos informativos como tiendas. La coincidencia idéntica exige marca/modelo/variante/condición completos, o GTIN y condición compatibles, sin contradicciones; un SKU aislado no identifica un producto entre tiendas.
+
+Para la explicación IA en Bedrock, usar `bedrock-runtime` y `Converse`, con salida JSON validada por el backend. Recomendación operativa: Claude Sonnet 4.5 para investigaciones ambiguas y reportes completos; Claude Haiku 4.5 para el resumen normal de cada búsqueda; Amazon Nova Lite para clasificación/normalización económica y Nova Premier sólo para investigación excepcional. El modelo recibe hechos delimitados y no tiene herramientas de red: el trabajo investigable se refleja en fuentes, señales y limitaciones, no en texto persuasivo.
 
 ## API y límites
 
