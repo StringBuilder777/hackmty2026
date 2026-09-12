@@ -120,6 +120,19 @@ export interface Analysis {
   limitations: string[];
   error: string | null;
 }
+
+export type ForensicScheme = "phantom_vendor" | "kickback" | "round_tripping" | "threshold_splitting" | "revenue_inflation";
+export interface Exhibit { exhibit_id: string; source_table: string; record_id: string; note: string; }
+export interface MoneyTrailStep { from: string; to: string; amount: number; date: string; exhibit_id: string; }
+export interface ForensicFinding {
+  scheme_type: ForensicScheme; entities: string[]; narrative: string; rule_broken: string;
+  peso_amount: number; confidence: "proven" | "probable"; money_trail: MoneyTrailStep[]; exhibits: Exhibit[];
+}
+export interface LeadNotPursued { entity: string; signal: string; reason: string; tool_calls_made: string[]; closed_by: "investigator" | "challenger" | "validator"; }
+export interface ForensicSubmission {
+  seed: number; findings: ForensicFinding[]; leads_not_pursued: LeadNotPursued[];
+  run_metadata: { llm_calls: number; mxn_cost: number; wall_clock_seconds: number; cost_by_role: Record<string, number>; deterministic: boolean; };
+}
 export interface Selection {
   product: Product;
   branchId: BranchId | null;

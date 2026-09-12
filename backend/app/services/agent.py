@@ -9,6 +9,18 @@ import aiohttp
 from ..models import AgentAssessment, Product, Risk, WebsiteProfile
 from .http import bounded_json
 
+
+def forensic_narrative(scheme: str, entities: list[str], rule: str, peso: float, exhibits: list[object]) -> str:
+    """Offline bounded wording for already established forensic facts.
+
+    It deliberately receives no database connection and cannot establish facts
+    or calculate values; the deterministic detector owns both responsibilities.
+    """
+    entity_text = ', '.join(entities)
+    return (f'Los registros revisados vinculan {entity_text} con el patrón {scheme}. '
+            f'La evidencia citada sustenta una exposición de ${peso:,.2f} MXN. '
+            f'El hallazgo se reporta conforme a {rule} y queda limitado a los documentos y transferencias incluidos en este expediente.')
+
 GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 ALLOWED_MODELS = {'gemini-2.5-flash', 'gemini-2.5-flash-lite'}
 

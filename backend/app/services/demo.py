@@ -1,5 +1,5 @@
 """Fictional offers and branches, never fed into real analyses."""
-from ..models import Analysis, Product, Branch, Risk, Evidence, ProductAttribute, StoreProfile, WebsiteProfile, DomainRegistration
+from ..models import AgentAssessment, Analysis, Product, Branch, Risk, Evidence, ProductAttribute, StoreProfile, WebsiteProfile, DomainRegistration
 
 
 def populate(analysis: Analysis) -> None:
@@ -26,7 +26,11 @@ def populate(analysis: Analysis) -> None:
             Evidence(title='Antigüedad del dominio', status='warning', source='https://rdap.org/domain/tienda-tramites.example', detail='El registro ficticio indica creación hace 23 días.'),
             Evidence(title='Posible suplantación gubernamental', status='warning', source='https://tienda-tramites.example', detail='El contenido usa lenguaje gubernamental, pero el dominio no pertenece a una terminación oficial.'),
             Evidence(title='Formularios y credenciales', status='warning', source='https://tienda-tramites.example', detail='El demo incluye un formulario sensible que requeriría verificar destino y operador.'),
-        ])
+        ], agent_assessment=AgentAssessment(
+            level='alto',
+            explanation='La combinación de identidad gubernamental no comprobada, dominio reciente y solicitud de datos sensibles amerita detenerse y verificar el sitio por un canal oficial.',
+            limitations=['Evaluación demostrativa sobre evidencia ficticia; no representa una consulta real a Amazon Bedrock.'],
+        ))
         analysis.limitations = ['Demo ficticio: no se consultó ningún dominio ni organismo real.', 'Las señales requieren confirmación humana y no equivalen a una acusación de fraude.']
         analysis.status = 'completed'
         return

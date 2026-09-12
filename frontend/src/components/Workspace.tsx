@@ -50,6 +50,7 @@ import ShoppingList from "./ShoppingList";
 import RoutePanel from "./RoutePanel";
 import InvestigationPanel from "./InvestigationPanel";
 import WebsiteAuditPanel from "./WebsiteAuditPanel";
+import ForensicDashboard from "./ForensicDashboard";
 
 const ShoppingMap = dynamic(() => import("./Map"), {
   ssr: false,
@@ -64,6 +65,14 @@ const STAGES = [
   "searching",
   "completed",
 ] as const;
+type WorkspaceView = "explore" | "list" | "cart" | "forensic";
+
+function viewFromHash(hash: string): WorkspaceView {
+  if (hash === "#auditoria") return "forensic";
+  if (hash === "#mi-lista") return "list";
+  if (hash === "#carrito") return "cart";
+  return "explore";
+}
 
 function subscribeOnline(callback: () => void) {
   window.addEventListener("online", callback);
@@ -110,7 +119,9 @@ export default function Workspace() {
   const [install, setInstall] = useState<InstallEvent | null>(null);
   const [locationError, setLocationError] = useState("");
   const [manual, setManual] = useState(false);
-  const [view, setView] = useState<"explore" | "list" | "cart">("explore");
+  const [view, setView] = useState<WorkspaceView>(() =>
+    typeof window === "undefined" ? "explore" : viewFromHash(window.location.hash),
+  );
   const [cartTransition, setCartTransition] = useState<Product | null>(null);
   const cartTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generation = useRef(0);
@@ -135,6 +146,12 @@ export default function Workspace() {
     },
     [],
   );
+
+  useEffect(() => {
+    const syncViewFromHash = () => setView(viewFromHash(window.location.hash));
+    window.addEventListener("hashchange", syncViewFromHash);
+    return () => window.removeEventListener("hashchange", syncViewFromHash);
+  }, []);
 
   useEffect(() => {
     alive.current = true;
@@ -258,9 +275,10 @@ export default function Workspace() {
     setMode(next);
     setItems(snapshot?.items || []);
     setAnalysis(snapshot?.analysis || null);
-    setTarget(snapshot?.analysis?.target ?? target);
+    const nextTarget = snapshot?.analysis?.target ?? target;
+    setTarget(nextTarget);
     setSavedAt(snapshot?.savedAt || null);
-    setUrl(next === "demo" ? (target === "website" ? "https://tienda-tramites.example" : "https://example.com/audifonos") : "");
+    setUrl(next === "demo" ? (nextTarget === "website" ? "https://tienda-tramites.example" : "https://example.com/audifonos") : "");
   }
 
   function chooseTarget(next: AnalysisTarget) {
@@ -353,6 +371,17 @@ export default function Workspace() {
 
   const complete = analysis?.status === "completed";
 
+  function navigateView(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    next: WorkspaceView,
+  ) {
+    // A hash navigation can remount the client surface before its state update
+    // paints. Keep the URL useful without letting the browser discard the tab.
+    event.preventDefault();
+    setView(next);
+    window.history.replaceState(null, "", next === "forensic" ? "#auditoria" : next === "cart" ? "#carrito" : next === "list" ? "#mi-lista" : "#explorar");
+  }
+
   return (
     <>
       <a href="#resultados" className="skip-link">
@@ -368,14 +397,14 @@ export default function Workspace() {
           <a
             className={view === "explore" ? "nav-active" : undefined}
             href="#explorar"
-            onClick={() => setView("explore")}
+            onClick={(event) => navigateView(event, "explore")}
           >
             {t.header.explore}
           </a>
           <a
             className={view === "list" ? "nav-active" : undefined}
             href="#mi-lista"
-            onClick={() => setView("list")}
+            onClick={(event) => navigateView(event, "list")}
           >
             {t.header.myList}
             {items.length > 0 && (
@@ -385,13 +414,14 @@ export default function Workspace() {
           <a
             className={view === "cart" ? "nav-active" : undefined}
             href="#carrito"
-            onClick={() => setView("cart")}
+            onClick={(event) => navigateView(event, "cart")}
           >
             {t.header.cart}
             {items.length > 0 && (
               <span className="nav-count">{items.length}</span>
             )}
           </a>
+          <a className={view === "forensic" ? "nav-active" : undefined} href="#auditoria" onClick={(event) => navigateView(event, "forensic")}>Auditoría</a>
         </nav>
         
         <div className="header-actions">
@@ -529,7 +559,7 @@ export default function Workspace() {
       </section>
       )}
 
-      <main className="workspace workspace-no-map">
+      {view === "forensic" ? <ForensicDashboard /> : <main className="workspace workspace-no-map">
         {view === "explore" && (
         <section
           className="results"
@@ -891,7 +921,7 @@ export default function Workspace() {
             />
           </section>
         )}
-      </main>
+      </main>}
     </>
   );
 }

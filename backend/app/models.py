@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
@@ -9,6 +9,88 @@ def now() -> str:
 
 class Model(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+
+
+# The forensic contract is intentionally independent from the shopping models
+# below.  Judges validate this shape directly, so these models are strict and
+# never silently discard fields.
+ForensicSourceTable = Literal['ledger', 'invoices', 'bank_txns', 'vendors', 'efos_list', 'purchase_orders', 'contracts', 'employees']
+ForensicScheme = Literal['phantom_vendor', 'kickback', 'round_tripping', 'threshold_splitting', 'revenue_inflation']
+
+
+class Exhibit(Model):
+    exhibit_id: str = Field(min_length=1)
+    source_table: ForensicSourceTable
+    record_id: str = Field(min_length=1)
+    note: str = Field(min_length=1, max_length=600)
+
+
+class MoneyTrailStep(Model):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False, populate_by_name=True)
+    from_: str = Field(alias='from', min_length=1)
+    to: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    date: str = Field(min_length=1)
+    exhibit_id: str = Field(min_length=1)
+
+
+class Finding(Model):
+    scheme_type: ForensicScheme
+    entities: list[str] = Field(min_length=1)
+    narrative: str = Field(min_length=1, max_length=1500)
+    rule_broken: str = Field(min_length=1, max_length=400)
+    peso_amount: float = Field(gt=0)
+    confidence: Literal['proven', 'probable']
+    money_trail: list[MoneyTrailStep] = Field(default_factory=list)
+    exhibits: list[Exhibit] = Field(min_length=3)
+
+    @field_validator('entities')
+    @classmethod
+    def prefixed_entities(cls, values: list[str]) -> list[str]:
+        if any(':' not in value for value in values):
+            raise ValueError('Cada entidad debe incluir un prefijo, por ejemplo RFC: o EMP:.')
+        return values
+
+    @field_validator('narrative')
+    @classmethod
+    def bounded_narrative(cls, value: str) -> str:
+        if len(value.split()) > 150:
+            raise ValueError('La narrativa no puede superar 150 palabras.')
+        return value
+
+
+class LeadNotPursued(Model):
+    entity: str = Field(min_length=1)
+    signal: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    tool_calls_made: list[str] = Field(default_factory=list)
+    closed_by: Literal['investigator', 'challenger', 'validator'] = 'investigator'
+
+
+class RunMetadata(Model):
+    llm_calls: int = Field(ge=0)
+    mxn_cost: float = Field(ge=0)
+    wall_clock_seconds: float = Field(ge=0)
+    cost_by_role: dict[str, float] = Field(default_factory=dict)
+    deterministic: bool = True
+
+
+class Submission(Model):
+    seed: int
+    findings: list[Finding] = Field(default_factory=list)
+    leads_not_pursued: list[LeadNotPursued] = Field(default_factory=list)
+    run_metadata: RunMetadata
+
+
+class AuditRunInput(Model):
+    estate_path: str = Field(min_length=1, max_length=4096)
+    seed: int
+
+
+class AuditUploadInput(Model):
+    """Base64 is used instead of multipart to keep one explicit API contract."""
+    estate_base64: str = Field(min_length=24, max_length=24 * 1024 * 1024)
+    seed: int
 
 
 class Evidence(Model):

@@ -53,7 +53,7 @@ export default function WebsiteAuditPanel({ analysis, english }: { analysis: Ana
         <small>{registration?.note}</small>
       </details>
 
-      {risk.agent_assessment && <section className="agent-assessment"><div><span>{english ? "Bedrock agent assessment" : "Evaluación del agente Bedrock"}</span><strong>{risk.agent_assessment.level}</strong></div><p>{risk.agent_assessment.explanation}</p><small>{english ? "The agent interprets collected evidence; it does not browse or certify the site." : "El agente interpreta la evidencia recolectada; no navega ni certifica el sitio."}</small></section>}
+      {risk.agent_assessment && <section className="agent-assessment"><div><span>{english ? "Agent assessment" : "Evaluación del agente"}</span><strong>{risk.agent_assessment.level}</strong></div><p>{risk.agent_assessment.explanation}</p><small>{english ? "The configured AI interprets collected evidence; it does not browse or certify the site." : "La IA configurada interpreta la evidencia recolectada; no navega ni certifica el sitio."}</small></section>}
       <FlagSummary evidence={risk.evidence} />
       <EvidenceList evidence={risk.evidence} label={english ? "View phishing evidence and sources" : "Ver evidencias y fuentes de phishing"} />
       {analysis.limitations.length > 0 && <details className="limitations"><summary>{english ? "Scope and limitations" : "Alcance y limitaciones"}</summary><ul>{analysis.limitations.map((item) => <li key={item}>{item}</li>)}</ul></details>}

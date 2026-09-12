@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 
 export type Lang = "es" | "en";
 
@@ -563,35 +563,48 @@ const LangContext = createContext<{
 
 // Default to Spanish (primary locale for HackMTY Monterrey)
 const DEFAULT_LANG: Lang = "es";
+const LANGUAGE_EVENT = "buenpaso-language-change";
+let memoryLang: Lang = DEFAULT_LANG;
+
+function readBrowserLanguage(): Lang {
+  try {
+    const saved = localStorage.getItem("buenpaso_lang") || localStorage.getItem("lang");
+    if (saved === "es" || saved === "en") return saved;
+  } catch {
+    // Fall back to the in-memory preference when storage is unavailable.
+  }
+  return memoryLang;
+}
+
+function subscribeLanguage(callback: () => void) {
+  const notify = () => callback();
+  window.addEventListener("storage", notify);
+  window.addEventListener(LANGUAGE_EVENT, notify);
+  return () => {
+    window.removeEventListener("storage", notify);
+    window.removeEventListener(LANGUAGE_EVENT, notify);
+  };
+}
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => {
-    if (typeof window === "undefined") return DEFAULT_LANG;
-    try {
-      const saved = localStorage.getItem("buenpaso_lang") || localStorage.getItem("lang");
-      return saved === "es" || saved === "en" ? saved : DEFAULT_LANG;
-    } catch {
-      return DEFAULT_LANG;
-    }
-  });
+  // The server and the client's first render must use the same language.
+  // useSyncExternalStore applies the browser snapshot after hydration.
+  const lang = useSyncExternalStore(subscribeLanguage, readBrowserLanguage, () => DEFAULT_LANG);
 
   useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.documentElement.lang = lang;
-    }
+    document.documentElement.lang = lang;
   }, [lang]);
 
   function setLang(l: Lang) {
-    setLangState(l);
+    memoryLang = l;
     try {
       localStorage.setItem("buenpaso_lang", l);
       localStorage.setItem("lang", l);
     } catch {
       // Storage unavailable
     }
-    if (typeof document !== "undefined") {
-      document.documentElement.lang = l;
-    }
+    document.documentElement.lang = l;
+    window.dispatchEvent(new Event(LANGUAGE_EVENT));
   }
 
   return (

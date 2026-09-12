@@ -1,6 +1,8 @@
 import asyncio
+import base64
 import logging
 import os
+import sqlite3
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -8,8 +10,8 @@ from uuid import uuid4
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from .models import AnalysisInput, Analysis, RouteInput
+from fastapi.responses import JSONResponse, PlainTextResponse
+from .models import AnalysisInput, Analysis, AuditRunInput, AuditUploadInput, RouteInput, Submission
 from .services.fetch import fetch_html
 from .services.extraction import extract
 from .services.store import inspect_store
@@ -22,8 +24,10 @@ from .services.search import alternatives
 from .services.branches import resolve
 from .services.routing import calculate_route
 from .services.demo import populate
+from .services.forensic import render_case_file, run_forensic_audit
 
 jobs: dict[str, tuple[float, Analysis]] = {}
+last_case_file: str | None = None
 rate: dict[str, deque] = defaultdict(deque)
 semaphore = asyncio.Semaphore(3)
 
@@ -67,8 +71,10 @@ async def limits(request: Request, call_next):
         body = bytearray()
         async for chunk in request.stream():
             body.extend(chunk)
-            if len(body) > 16384:
-                return JSONResponse(status_code=413, content={'error': {'code': 'size', 'message': 'Solicitud demasiado grande (máximo 16 KB).'}})
+            audit_upload = request.url.path == '/audit/upload'
+            max_body = 20 * 1024 * 1024 if audit_upload else 16384
+            if len(body) > max_body:
+                return JSONResponse(status_code=413, content={'error': {'code': 'size', 'message': f'Solicitud demasiado grande (máximo {max_body // 1024 // 1024 if audit_upload else 16} {"MB" if audit_upload else "KB"}).'}})
         request._body = bytes(body)
         ip = request.client.host if request.client else 'unknown'
         clock = time.monotonic()
@@ -181,3 +187,41 @@ async def route(payload: RouteInput):
         return await calculate_route(payload)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@app.post('/audit/run', response_model=Submission)
+async def audit_run(payload: AuditRunInput):
+    """Run the isolated, read-only SQLite audit and retain its case file."""
+    global last_case_file
+    try:
+        submission = await asyncio.to_thread(run_forensic_audit, payload.estate_path, payload.seed)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    last_case_file = render_case_file(submission, payload.estate_path)
+    return submission
+
+
+@app.post('/audit/upload', response_model=Submission)
+async def audit_upload(payload: AuditUploadInput):
+    """Audit a browser-selected database without retaining its original file."""
+    global last_case_file
+    try:
+        raw = base64.b64decode(payload.estate_base64, validate=True)
+        if not raw.startswith(b'SQLite format 3\x00'):
+            raise ValueError('El archivo no es una base SQLite válida.')
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.db') as estate:
+            estate.write(raw)
+            estate.flush()
+            submission = await asyncio.to_thread(run_forensic_audit, estate.name, payload.seed)
+            last_case_file = render_case_file(submission, estate.name)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return submission
+
+
+@app.get('/audit/case-file', response_class=PlainTextResponse)
+async def audit_case_file():
+    if last_case_file is None:
+        raise HTTPException(404, 'No hay un expediente generado todavía.')
+    return PlainTextResponse(last_case_file, media_type='text/markdown; charset=utf-8')
