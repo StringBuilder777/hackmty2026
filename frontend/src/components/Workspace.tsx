@@ -21,6 +21,7 @@ import {
   Route as RouteIcon,
   Search,
   ShieldQuestion,
+  ShoppingBag,
   TriangleAlert,
   WifiOff,
 } from "lucide-react";
@@ -44,6 +45,7 @@ import FlagSummary from "./FlagSummary";
 import ProductCard, { ProductImage } from "./ProductCard";
 import ShoppingList from "./ShoppingList";
 import RoutePanel from "./RoutePanel";
+import InvestigationPanel from "./InvestigationPanel";
 
 const ShoppingMap = dynamic(() => import("./Map"), {
   ssr: false,
@@ -103,6 +105,9 @@ export default function Workspace() {
   const [install, setInstall] = useState<InstallEvent | null>(null);
   const [locationError, setLocationError] = useState("");
   const [manual, setManual] = useState(false);
+  const [view, setView] = useState<"explore" | "list" | "cart">("explore");
+  const [cartTransition, setCartTransition] = useState<Product | null>(null);
+  const cartTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generation = useRef(0);
   const alive = useRef(true);
   const stops = useMemo(() => groupStops(items), [items]);
@@ -119,23 +124,12 @@ export default function Workspace() {
     [route, stops],
   );
 
-  const STAGE_LABELS_ES = [
-    "En cola",
-    "Leyendo la página",
-    "Evaluando señales",
-    "Buscando alternativas",
-    "Análisis listo",
-  ];
-  
-  const STAGE_LABELS_EN = [
-    "Queued",
-    "Reading page",
-    "Evaluating signals",
-    "Finding alternatives",
-    "Analysis ready",
-  ];
-
-  const currentStages = lang === "es" ? STAGE_LABELS_ES : STAGE_LABELS_EN;
+  useEffect(
+    () => () => {
+      if (cartTransitionTimer.current) clearTimeout(cartTransitionTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     alive.current = true;
@@ -165,18 +159,14 @@ export default function Workspace() {
       navigator.serviceWorker
         .register("/sw.js")
         .catch(() =>
-          setError(
-            lang === "es"
-              ? "No fue posible activar el soporte sin conexión. Reintenta recargando."
-              : "Could not activate offline support. Try reloading."
-          ),
+          setError(t.errors.offlineSw),
         );
     return () => {
       alive.current = false;
       clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", handler);
     };
-  }, [lang]);
+  }, [t]);
 
   useEffect(() => {
     if (!ready) return;
@@ -193,15 +183,11 @@ export default function Workspace() {
         localStorage.setItem(`buenpaso-v1-${mode}`, JSON.stringify(snapshot));
         localStorage.setItem("buenpaso-last-mode", mode);
       } catch {
-        setError(
-          lang === "es" 
-            ? "El navegador no pudo guardar la lista. Revisa el almacenamiento disponible."
-            : "The browser couldn't save the list. Check available storage."
-        );
+        setError(t.errors.storageFail);
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [items, analysis, mode, ready, lang]);
+  }, [items, analysis, mode, ready, t]);
 
   useEffect(() => {
     if (!online || !stops.length) return;
@@ -233,7 +219,7 @@ export default function Workspace() {
             key: routeKey,
             data: {
               status: "unavailable",
-              message: lang === "es" ? "No se pudo conectar con el proveedor de rutas. Reintenta." : "Could not connect to the route provider. Retry.",
+              message: t.errors.routeFail,
               coordinates: [],
               ordered_stops: stops,
               distance_m: null,
@@ -253,7 +239,7 @@ export default function Workspace() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [routeKey, origin, stops, transport, mode, online, lang]);
+  }, [routeKey, origin, stops, transport, mode, online, t]);
 
   function switchMode(next: Mode) {
     if (next === mode) return;
@@ -284,25 +270,21 @@ export default function Workspace() {
         if (current !== generation.current || !alive.current) return;
         setAnalysis(result);
         if (result.status === "error")
-          throw new Error(result.error || (lang === "es" ? "No se pudo completar el análisis." : "Analysis could not be completed."));
+          throw new Error(result.error || t.errors.analysisFailed);
         if (result.status === "completed") return;
         await new Promise((resolve) => setTimeout(resolve, 650));
         if (!navigator.onLine)
-          throw new Error(
-            lang === "es" ? "Se perdió la conexión. Tus productos guardados siguen disponibles." : "Connection lost. Your saved products are still available."
-          );
+          throw new Error(t.errors.connectionLost);
         if (current !== generation.current || !alive.current) return;
         result = await api<Analysis>(`/analyses/${result.id}`);
       }
-      throw new Error(
-        lang === "es" ? "El análisis sigue en curso. Reintenta en unos momentos." : "Analysis is still ongoing. Retry in a moment."
-      );
+      throw new Error(t.errors.stillRunning);
     } catch (cause) {
       if (current === generation.current && alive.current)
         setError(
           cause instanceof Error
             ? cause.message
-            : (lang === "es" ? "No se pudo conectar con FastAPI. Verifica que esté activo." : "Could not connect to FastAPI. Verify it is running.")
+            : t.errors.fastApiFail
         );
     } finally {
       if (current === generation.current && alive.current) setRunning(false);
@@ -311,31 +293,27 @@ export default function Workspace() {
 
   const chooseOrigin = useCallback((point: Point) => {
     setOrigin({ lat: point.lat, lng: point.lng });
-    setOriginName(lang === "es" ? "Punto personalizado" : "Custom point");
+    setOriginName(t.map.originCustom);
     setPicking(false);
     setLocationError("");
-  }, [lang]);
+  }, [t]);
 
   function geolocate() {
     if (!navigator.geolocation) {
-      setLocationError(
-        lang === "es" ? "La geolocalización no está disponible. Elige un punto manualmente." : "Geolocation is not available. Choose a point manually."
-      );
+      setLocationError(t.errors.geoUnavailable);
       return;
     }
-    setLocationError(lang === "es" ? "Solicitando ubicación…" : "Requesting location...");
+    setLocationError(t.errors.geoRequesting);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         chooseOrigin({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
-        setOriginName(lang === "es" ? "Mi ubicación" : "My location");
+        setOriginName(t.map.useMyLocation);
       },
       () =>
-        setLocationError(
-          lang === "es" ? "No se pudo obtener permiso o ubicación. Puedes elegir el origen en el mapa o con coordenadas." : "Could not get permission or location. Choose origin on the map or via coordinates."
-        ),
+        setLocationError(t.errors.geoDenied),
       { timeout: 8000, maximumAge: 60000 },
     );
   }
@@ -347,6 +325,13 @@ export default function Workspace() {
         ? current
         : [...current, { product, branchId: product.branches[0]?.id || null }],
     );
+    setCartTransition(product);
+    if (cartTransitionTimer.current) clearTimeout(cartTransitionTimer.current);
+    cartTransitionTimer.current = setTimeout(() => {
+      setView("cart");
+      setCartTransition(null);
+      window.history.replaceState(null, "", "#carrito");
+    }, 650);
   }
 
   const complete = analysis?.status === "completed";
@@ -354,94 +339,143 @@ export default function Workspace() {
   return (
     <>
       <a href="#resultados" className="skip-link">
-        {lang === "es" ? "Saltar a resultados" : "Skip to results"}
+        {t.header.skipLink}
       </a>
       
       <header className="header">
         <Link className="brand" href="/" aria-label="BuenPaso, inicio">
           <RouteIcon size={30} />
-          <span>BuenPaso</span>
+          <span>{t.header.brand}</span>
         </Link>
         <nav aria-label="Principal">
-          <a className="nav-active" href="#explorar">
-            {lang === "es" ? "Explorar" : "Explore"}
+          <a
+            className={view === "explore" ? "nav-active" : undefined}
+            href="#explorar"
+            onClick={() => setView("explore")}
+          >
+            {t.header.explore}
           </a>
-          <a href="#mi-lista">
-            {lang === "es" ? "Mi lista" : "My list"}
+          <a
+            className={view === "list" ? "nav-active" : undefined}
+            href="#mi-lista"
+            onClick={() => setView("list")}
+          >
+            {t.header.myList}
+            {items.length > 0 && (
+              <span className="nav-count">{items.length}</span>
+            )}
+          </a>
+          <a
+            className={view === "cart" ? "nav-active" : undefined}
+            href="#carrito"
+            onClick={() => setView("cart")}
+          >
+            {t.header.cart}
             {items.length > 0 && (
               <span className="nav-count">{items.length}</span>
             )}
           </a>
         </nav>
         
-        <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <button
-            className="text-button lang-switcher"
-            onClick={() => setLang(lang === "es" ? "en" : "es")}
-            aria-label="Cambiar idioma / Switch language"
+        <div className="header-actions">
+          {/* Apple Segmented Language Switcher */}
+          <div
+            className="segmented-control lang-switch"
+            aria-label={t.header.switchLanguage}
           >
-            🌐 {lang === "es" ? "EN" : "ES"}
-          </button>
+            <button
+              type="button"
+              aria-pressed={lang === "es"}
+              className={`segmented-btn ${lang === "es" ? "active" : ""}`}
+              onClick={() => setLang("es")}
+            >
+              ES
+            </button>
+            <button
+              type="button"
+              aria-pressed={lang === "en"}
+              className={`segmented-btn ${lang === "en" ? "active" : ""}`}
+              onClick={() => setLang("en")}
+            >
+              EN
+            </button>
+          </div>
 
           <div className="header-location">
-            <MapPin size={16} />
-            <span>Monterrey, NL</span>
+            <MapPin size={15} />
+            <span>{t.header.location}</span>
           </div>
-        </div>
 
-        {install && (
-          <button
-            className="text-button install"
-            onClick={async () => {
-              await install.prompt();
-              await install.userChoice;
-              setInstall(null);
-            }}
-          >
-            <Download size={15} /> {lang === "es" ? "Instalar" : "Install"}
-          </button>
-        )}
+          {install && (
+            <button
+              className="text-button install"
+              onClick={async () => {
+                await install.prompt();
+                await install.userChoice;
+                setInstall(null);
+              }}
+            >
+              <Download size={15} /> {t.header.install}
+            </button>
+          )}
+        </div>
       </header>
+
+      {cartTransition && (
+        <div
+          className="cart-transfer"
+          role="status"
+          aria-label={lang === "es" ? `Añadiendo ${cartTransition.name} al carrito` : `Adding ${cartTransition.name} to cart`}
+        >
+          <ShoppingBag size={18} />
+          <span>{lang === "es" ? "Añadido al carrito" : "Added to cart"}</span>
+        </div>
+      )}
 
       <div className={`mode-bar ${mode}`}>
         <span>
           {mode === "demo" ? (
-            <TriangleAlert size={14} />
+            <TriangleAlert size={15} />
           ) : (
-            <ShieldQuestion size={14} />
+            <ShieldQuestion size={15} />
           )}
-          {mode === "demo"
-            ? (lang === "es" ? "Modo demo · Datos de ejemplo, no verificados." : "Demo mode · Example data, not verified.")
-            : (lang === "es" ? "Análisis real · Evidencia disponible, sin garantías de seguridad." : "Real analysis · Evidence available, no safety guarantees.")}
+          {mode === "demo" ? t.modeBar.demo : t.modeBar.real}
         </span>
-        <div className="mode-switch" aria-label="Modo de datos">
+        <div className="segmented-control mode-switch" aria-label={t.modeBar.ariaLabel}>
           <button
+            type="button"
             aria-pressed={mode === "real"}
+            className={`segmented-btn ${mode === "real" ? "active" : ""}`}
             onClick={() => switchMode("real")}
           >
-            Real
+            {t.modeBar.realBtn}
           </button>
           <button
+            type="button"
             aria-pressed={mode === "demo"}
+            className={`segmented-btn ${mode === "demo" ? "active" : ""}`}
             onClick={() => switchMode("demo")}
           >
-            Demo
+            {t.modeBar.demoBtn}
           </button>
         </div>
       </div>
+
       {!online && (
         <div className="offline-bar" role="status">
-          <WifiOff size={16} /> {lang === "es" ? "Sin conexión · Consulta tu lista guardada. Análisis y rutas requieren red." : "Offline · Check your saved list. Analysis and routes require network."}
+          <WifiOff size={16} /> {t.offlineBar.message}
         </div>
       )}
+
+      {view === "explore" && (
       <section id="explorar" className="search-section">
         <div>
-          <h1>{lang === "es" ? "Compra con más contexto." : "Shop with more context."}</h1>
-          <p>{lang === "es" ? "Revisa una tienda, compara opciones y planea tu recorrido." : "Check a store, compare options and plan your route."}</p>
+          <h1>{t.search.heroTitle}</h1>
+          <p>{t.search.heroSubtitle}</p>
         </div>
         <form onSubmit={analyze} className="search-form">
           <label htmlFor="product-url" className="sr-only">
-            {lang === "es" ? "URL de producto o tienda" : "Product or store URL"}
+            {t.search.urlLabel}
           </label>
           <div className="url-field">
             <Link2 size={18} />
@@ -450,7 +484,7 @@ export default function Workspace() {
               type="url"
               required
               maxLength={2048}
-              placeholder={lang === "es" ? "Pega el enlace de un producto o tienda" : "Paste a product or store link"}
+              placeholder={t.search.urlPlaceholder}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               disabled={running || !online}
@@ -461,16 +495,19 @@ export default function Workspace() {
             type="submit"
             disabled={running || !online || !ready}
           >
-            {running ? (lang === "es" ? "Analizando…" : "Analyzing...") : (lang === "es" ? "Analizar" : "Analyze")}
+            {running ? t.search.analyzing : t.search.analyze}
             <ArrowRight size={16} />
           </button>
         </form>
       </section>
-      <main className={`workspace ${items.length === 0 ? "workspace-no-map" : ""}`}>
+      )}
+
+      <main className="workspace workspace-no-map">
+        {view === "explore" && (
         <section
           className="results"
           id="resultados"
-          aria-label="Resultados y lista de compras"
+          aria-label="Resultados de la investigación"
         >
           {savedAt && (
             <p className="saved-note">
@@ -483,13 +520,13 @@ export default function Workspace() {
               <p>
                 {error}
                 <br />
-                {lang === "es" ? "Puedes reintentar con el botón Analizar." : "You can retry with the Analyze button."}
+                {t.errors.retryWithAnalyze}
               </p>
             </div>
           )}
           {running && (
             <div className="analysis-progress" role="status">
-              <h2>{lang === "es" ? "Revisando tu enlace" : "Checking your link"}</h2>
+              <h2>{t.progress.title}</h2>
               <ol>
                 {STAGES.slice(0, 4).map((stage, i) => (
                   <li
@@ -513,37 +550,37 @@ export default function Workspace() {
                         i + 1
                       )}
                     </span>
-                    {currentStages[i]}
+                    {t.progress.stages[i]}
                   </li>
                 ))}
               </ol>
-              <small>{lang === "es" ? "Las etapas reflejan el estado del backend." : "Stages reflect backend status."}</small>
+              <small>{t.progress.hint}</small>
             </div>
           )}
           {!analysis && !running && (
             <div className="welcome">
               <div className="welcome-icon">
-                <Headphones size={40} strokeWidth={1.4} />
+                <Headphones size={42} strokeWidth={1.4} />
               </div>
               <h2>
-                {lang === "es" ? "Encuentra una mejor" : "Find a better"}
+                {t.welcome.titleLine1}
                 <br />
-                {lang === "es" ? "forma de comprar." : "way to shop."}
+                {t.welcome.titleLine2}
               </h2>
               <p>
-                {lang === "es" ? "Empezamos con audífonos en Monterrey." : "We start with headphones in Monterrey."}
+                {t.welcome.subLine1}
                 <br />
-                {lang === "es" ? "Un enlace es el primer paso." : "A link is the first step."}
+                {t.welcome.subLine2}
               </p>
               <div className="welcome-steps">
                 <span>
-                  <ShieldQuestion size={17} /> {lang === "es" ? "Revisa señales" : "Check signals"}
+                  <ShieldQuestion size={17} /> {t.welcome.stepSignals}
                 </span>
                 <span>
-                  <Search size={17} /> {lang === "es" ? "Compara opciones" : "Compare options"}
+                  <Search size={17} /> {t.welcome.stepCompare}
                 </span>
                 <span>
-                  <Navigation size={17} /> {lang === "es" ? "Organiza paradas" : "Organize stops"}
+                  <Navigation size={17} /> {t.welcome.stepRoute}
                 </span>
               </div>
               <button
@@ -553,19 +590,19 @@ export default function Workspace() {
                   setUrl("https://example.com/audifonos");
                 }}
               >
-                {lang === "es" ? "Explorar el modo demo" : "Explore demo mode"} <ArrowRight size={15} />
+                {t.welcome.exploreDemo} <ArrowRight size={15} />
               </button>
               <small>
-                {lang === "es" ? "Selecciona Demo y pulsa Analizar. Tiendas y precios ficticios." : "Select Demo and click Analyze. Fictitious stores and prices."}
+                {t.welcome.demoNote}
               </small>
             </div>
           )}
           {complete && analysis.product && (
             <>
               <div className="section-heading result-label">
-                <span>{lang === "es" ? "Resultado del análisis" : "Analysis result"}</span>
+                <span>{t.analysis.resultHeading}</span>
                 <small>
-                  {mode === "demo" ? (lang === "es" ? "Ejemplo · " : "Example · ") : ""}
+                  {mode === "demo" ? t.analysis.examplePrefix : ""}
                   {dateLabel(analysis.product.checked_at)}
                 </small>
               </div>
@@ -575,7 +612,7 @@ export default function Workspace() {
                   <div>
                     <h2>{analysis.product.name}</h2>
                     <p>
-                      {analysis.product.variant || (lang === "es" ? "Variante por identificar" : "Variant to be identified")}
+                      {analysis.product.variant || t.analysis.variantPending}
                     </p>
                     <small>{analysis.product.store}</small>
                   </div>
@@ -584,42 +621,47 @@ export default function Workspace() {
                   <div className="risk-box">
                     <TriangleAlert size={21} />
                     <div>
-                      <strong>{lang === "es" ? "Riesgo:" : "Risk:"} {analysis.risk.level}</strong>
+                      <strong>{t.analysis.riskLabel} {analysis.risk.level}</strong>
                       <p>{analysis.risk.explanation}</p>
                     </div>
                   </div>
                 )}
               </div>
+              <InvestigationPanel
+                product={analysis.product}
+                store={analysis.store_profile}
+                english={lang === "en"}
+              />
               {analysis.risk && (
                 <>
                   {analysis.risk.agent_assessment && (
-                    <section className="agent-assessment" aria-label={lang === "es" ? "Explicación del agente de riesgo" : "Risk agent explanation"}>
+                    <section className="agent-assessment" aria-label={t.analysis.aiAssessmentTitle}>
                       <div>
-                        <span>{lang === "es" ? "Evaluación complementaria por IA" : "Complementary AI assessment"}</span>
-                        <strong>{lang === "es" ? "Gravedad:" : "Severity:"} {analysis.risk.agent_assessment.level}</strong>
+                        <span>{t.analysis.aiAssessmentTitle}</span>
+                        <strong>{t.analysis.aiSeverity} {analysis.risk.agent_assessment.level}</strong>
                       </div>
                       <p>{analysis.risk.agent_assessment.explanation}</p>
-                      <small>{lang === "es" ? "Interpreta las señales disponibles; no verifica la identidad de la tienda." : "Interprets available signals; does not verify store identity."}</small>
+                      <small>{t.analysis.aiNote}</small>
                     </section>
                   )}
                   <FlagSummary evidence={analysis.risk.evidence} />
                   <EvidenceList
                     evidence={analysis.risk.evidence}
-                    label={lang === "es" ? "Ver detalle y fuentes de las verificaciones" : "See details and verification sources"}
+                    label={t.analysis.evidenceHeading}
                   />
                 </>
               )}
               <section className="comparison">
                 <div className="section-heading">
-                  <h2>{lang === "es" ? "Compara tus opciones" : "Compare your options"}</h2>
-                  <span>{analysis.alternatives.length} {lang === "es" ? "alternativas" : "alternatives"}</span>
+                  <h2>{t.comparison.title}</h2>
+                  <span>{t.comparison.alternativesCount(analysis.alternatives.length)}</span>
                 </div>
                 <p className="section-description">
-                  {lang === "es" ? "Mismo producto, distintas tiendas. Revisa también la variante." : "Same product, different stores. Check the variant too."}
+                  {t.comparison.subtitle}
                 </p>
                 {analysis.alternatives.length === 0 && (
                   <p className="empty-notice">
-                    {lang === "es" ? "No hay alternativas disponibles. Puedes guardar el producto consultado." : "No alternatives available. You can save the queried product."}
+                    {t.comparison.emptyNotice}
                   </p>
                 )}
                 {(analysis.alternatives.length
@@ -636,7 +678,7 @@ export default function Workspace() {
                 ))}
                 {analysis.limitations.length > 0 && (
                   <details className="limitations">
-                    <summary>{lang === "es" ? "Alcance y verificaciones no disponibles" : "Scope and unavailable verifications"}</summary>
+                    <summary>{t.comparison.limitationsSummary}</summary>
                     <ul>
                       {analysis.limitations.map((note) => (
                         <li key={note}>{note}</li>
@@ -647,161 +689,178 @@ export default function Workspace() {
               </section>
             </>
           )}
-          <ShoppingList
-            items={items}
-            active={active}
-            onRemove={(id) =>
-              setItems((current) =>
-                current.filter((item) => item.product.id !== id),
-              )
-            }
-            onBranch={(id, branchId) =>
-              setItems((current) =>
-                current.map((item) =>
-                  item.product.id === id ? { ...item, branchId } : item,
-                ),
-              )
-            }
-            onFocus={setActive}
-          />
           <footer className="panel-footer">
-            {mode === "demo"
-              ? (lang === "es" ? "Demo · tiendas, precios y ubicaciones de ejemplo." : "Demo · fictitious stores, prices, and locations.")
-              : (lang === "es" ? "Las señales orientan; confirma las condiciones antes de comprar." : "Signals guide you; confirm conditions before buying.")}
+            {mode === "demo" ? t.footer.demoNotice : t.footer.realNotice}
             <br />
-            {lang === "es" ? "Tu lista se guarda en este navegador." : "Your list is saved in this browser."}{" "}
-            <span>BuenPaso · HackMTY 2026</span>
+            {t.footer.savedInBrowser}{" "}
+            <span>{t.footer.attribution}</span>
           </footer>
         </section>
-        {items.length > 0 && <section
-          className="map-section"
-          aria-label={lang === "es" ? "Mapa y recorrido de pickup" : "Map and pickup route"}
-        >
-          <ShoppingMap
-            stops={orderedStops}
-            origin={origin}
-            route={online ? route : null}
-            online={online}
-            active={active}
-            picking={picking}
-            onOrigin={chooseOrigin}
-            onFocus={setActive}
-          />
-          <div className="map-controls">
-            <div className="origin-control">
-              <label htmlFor="origin">{lang === "es" ? "Origen" : "Origin"}</label>
-              <div>
-                <MapPin size={15} />
+        )}
+
+        {view === "list" && (
+          <section
+            className="results"
+            id="mi-lista"
+            aria-label={t.header.myList}
+          >
+            <ShoppingList
+              items={items}
+              active={active}
+              onRemove={(id) =>
+                setItems((current) =>
+                  current.filter((item) => item.product.id !== id),
+                )
+              }
+              onBranch={(id, branchId) =>
+                setItems((current) =>
+                  current.map((item) =>
+                    item.product.id === id ? { ...item, branchId } : item,
+                  ),
+                )
+              }
+              onFocus={setActive}
+              onOpenCart={() => setView("cart")}
+            />
+            <footer className="panel-footer">
+              {mode === "demo" ? t.footer.demoNotice : t.footer.realNotice}
+              <br />
+              {t.footer.savedInBrowser} <span>{t.footer.attribution}</span>
+            </footer>
+          </section>
+        )}
+
+        {view === "cart" && items.length > 0 && (
+          <section
+            className="map-section"
+            aria-label={t.map.regionLabel}
+          >
+            <ShoppingMap
+              stops={orderedStops}
+              origin={origin}
+              route={online ? route : null}
+              online={online}
+              active={active}
+              picking={picking}
+              onOrigin={chooseOrigin}
+              onFocus={setActive}
+            />
+            <div className="map-controls">
+              <div className="origin-control">
+                <label htmlFor="origin">{t.map.origin}</label>
+                <div>
+                  <MapPin size={15} />
+                  <select
+                    id="origin"
+                    value={originName === "Macroplaza" ? "macroplaza" : "custom"}
+                    onChange={(e) => {
+                      if (e.target.value === "macroplaza") {
+                        setOrigin(DEFAULT_ORIGIN);
+                        setOriginName("Macroplaza");
+                      } else setManual(true);
+                    }}
+                  >
+                    <option value="macroplaza">Macroplaza</option>
+                    <option value="custom">
+                      {originName === "Macroplaza"
+                        ? t.map.chooseOtherPoint
+                        : originName}
+                    </option>
+                  </select>
+                  <button
+                    className="icon-button"
+                    aria-label={t.map.useMyLocation}
+                    onClick={geolocate}
+                  >
+                    <LocateFixed size={16} />
+                  </button>
+                </div>
+              </div>
+              <label className="transport-control">
+                {t.map.transport}
                 <select
-                  id="origin"
-                  value={originName === "Macroplaza" ? "macroplaza" : "custom"}
-                  onChange={(e) => {
-                    if (e.target.value === "macroplaza") {
-                      setOrigin(DEFAULT_ORIGIN);
-                      setOriginName("Macroplaza");
-                    } else setManual(true);
+                  aria-label={t.map.transportAria}
+                  value={transport}
+                  onChange={(e) => setTransport(e.target.value as Transport)}
+                >
+                  <option value="driving">{t.map.driving}</option>
+                  <option value="walking">{t.map.walking}</option>
+                  <option value="cycling">{t.map.cycling}</option>
+                </select>
+              </label>
+              <button
+                className={`text-button choose-point ${picking ? "selected" : ""}`}
+                onClick={() => setPicking(!picking)}
+              >
+                {picking ? t.map.cancelMap : t.map.chooseOnMap}
+              </button>
+              <button
+                className="text-button coordinates-toggle"
+                onClick={() => setManual(!manual)}
+              >
+                {t.map.coordinates}
+              </button>
+              {locationError && <p role="status">{locationError}</p>}
+              {manual && (
+                <form
+                  className="coordinates-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    chooseOrigin({
+                      lat: Number(data.get("lat")),
+                      lng: Number(data.get("lng")),
+                    });
+                    setManual(false);
                   }}
                 >
-                  <option value="macroplaza">Macroplaza</option>
-                  <option value="custom">
-                    {originName === "Macroplaza"
-                      ? (lang === "es" ? "Elegir otro punto" : "Choose another point")
-                      : originName}
-                  </option>
-                </select>
-                <button
-                  className="icon-button"
-                  aria-label={lang === "es" ? "Usar mi ubicación" : "Use my location"}
-                  onClick={geolocate}
-                >
-                  <LocateFixed size={16} />
-                </button>
+                  <label>
+                    {t.map.latitude}
+                    <input
+                      name="lat"
+                      aria-label={t.map.latitude}
+                      type="number"
+                      step="any"
+                      min="-90"
+                      max="90"
+                      required
+                      defaultValue={origin.lat}
+                    />
+                  </label>
+                  <label>
+                    {t.map.longitude}
+                    <input
+                      name="lng"
+                      aria-label={t.map.longitude}
+                      type="number"
+                      step="any"
+                      min="-180"
+                      max="180"
+                      required
+                      defaultValue={origin.lng}
+                    />
+                  </label>
+                  <button className="primary" type="submit">
+                    {t.map.apply}
+                  </button>
+                </form>
+              )}
+            </div>
+            {!online && (
+              <div className="map-offline">
+                <WifiOff size={16} /> {t.map.offlineBadge}
               </div>
-            </div>
-            <label className="transport-control">
-              {lang === "es" ? "Transporte" : "Transport"}
-              <select
-                aria-label={lang === "es" ? "Modo de transporte" : "Transport mode"}
-                value={transport}
-                onChange={(e) => setTransport(e.target.value as Transport)}
-              >
-                <option value="driving">{lang === "es" ? "Auto" : "Driving"}</option>
-                <option value="walking">{lang === "es" ? "A pie" : "Walking"}</option>
-                <option value="cycling">{lang === "es" ? "Bicicleta" : "Cycling"}</option>
-              </select>
-            </label>
-            <button
-              className={`text-button choose-point ${picking ? "selected" : ""}`}
-              onClick={() => setPicking(!picking)}
-            >
-              {picking ? (lang === "es" ? "Toca el mapa · Cancelar" : "Tap map · Cancel") : (lang === "es" ? "Elegir origen en el mapa" : "Choose origin on map")}
-            </button>
-            <button
-              className="text-button coordinates-toggle"
-              onClick={() => setManual(!manual)}
-            >
-              {lang === "es" ? "Coordenadas" : "Coordinates"}
-            </button>
-            {locationError && <p role="status">{locationError}</p>}
-            {manual && (
-              <form
-                className="coordinates-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const data = new FormData(event.currentTarget);
-                  chooseOrigin({
-                    lat: Number(data.get("lat")),
-                    lng: Number(data.get("lng")),
-                  });
-                  setManual(false);
-                }}
-              >
-                <label>
-                  {lang === "es" ? "Latitud" : "Latitude"}
-                  <input
-                    name="lat"
-                    aria-label="Latitud"
-                    type="number"
-                    step="any"
-                    min="-90"
-                    max="90"
-                    required
-                    defaultValue={origin.lat}
-                  />
-                </label>
-                <label>
-                  {lang === "es" ? "Longitud" : "Longitude"}
-                  <input
-                    name="lng"
-                    aria-label="Longitud"
-                    type="number"
-                    step="any"
-                    min="-180"
-                    max="180"
-                    required
-                    defaultValue={origin.lng}
-                  />
-                </label>
-                <button className="primary" type="submit">
-                  {lang === "es" ? "Aplicar" : "Apply"}
-                </button>
-              </form>
             )}
-          </div>
-          {!online && (
-            <div className="map-offline">
-              <WifiOff size={16} /> {lang === "es" ? "Mapa base sin conexión · paradas guardadas" : "Offline base map · saved stops"}
-            </div>
-          )}
-          <RoutePanel
-            route={route}
-            stops={stops}
-            originName={originName}
-            loading={online && stops.length > 0 && !route}
-            online={online}
-            retry={() => setRetry((value) => value + 1)}
-          />
-        </section>}
+            <RoutePanel
+              route={route}
+              stops={stops}
+              originName={originName}
+              loading={online && stops.length > 0 && !route}
+              online={online}
+              retry={() => setRetry((value) => value + 1)}
+            />
+          </section>
+        )}
       </main>
     </>
   );

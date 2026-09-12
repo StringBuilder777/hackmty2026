@@ -12,12 +12,15 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BranchId, Point, Stop, Route } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
+
 const originIcon = L.divIcon({
   className: "origin-icon",
   html: "<span></span>",
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
+
 function Controller({
   stops,
   origin,
@@ -57,6 +60,7 @@ function Controller({
   }, [map]);
   return null;
 }
+
 export default function ShoppingMap({
   stops,
   origin,
@@ -76,6 +80,8 @@ export default function ShoppingMap({
   onOrigin: (point: Point) => void;
   onFocus: (id: BranchId) => void;
 }) {
+  const { t } = useLang();
+
   return (
     <MapContainer
       center={[25.67, -100.32]}
@@ -99,7 +105,7 @@ export default function ShoppingMap({
       />
       <ZoomButtons />
       <Marker position={[origin.lat, origin.lng]} icon={originIcon}>
-        <Popup>Punto de partida</Popup>
+        <Popup>{t.map.startPoint}</Popup>
       </Marker>
       {stops.map((stop, index) => (
         <Marker
@@ -116,21 +122,24 @@ export default function ShoppingMap({
           <Popup>
             <strong>{stop.name}</strong>
             <p>{stop.products?.join(", ")}</p>
-            <small>Confirma el inventario antes de salir.</small>
+            <small>{t.map.confirmInventoryPopup}</small>
           </Popup>
         </Marker>
       ))}
       {online && route?.status === "available" && (
         <Polyline
           positions={route.coordinates.map(([lng, lat]) => [lat, lng])}
-          pathOptions={{ color: "#147d68", weight: 5, opacity: 0.85 }}
+          pathOptions={{ color: "#007a53", weight: 5, opacity: 0.9 }}
         />
       )}
     </MapContainer>
   );
 }
+
 function ZoomButtons() {
   const map = useMap();
+  const { t } = useLang();
+
   return (
     <div
       className="map-zoom leaflet-top leaflet-right"
@@ -138,10 +147,10 @@ function ZoomButtons() {
         if (element) L.DomEvent.disableClickPropagation(element);
       }}
     >
-      <button aria-label="Acercar mapa" onClick={() => map.zoomIn()}>
+      <button aria-label={t.map.zoomIn} onClick={() => map.zoomIn()}>
         +
       </button>
-      <button aria-label="Alejar mapa" onClick={() => map.zoomOut()}>
+      <button aria-label={t.map.zoomOut} onClick={() => map.zoomOut()}>
         −
       </button>
     </div>

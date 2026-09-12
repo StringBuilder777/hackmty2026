@@ -8,12 +8,14 @@ export default function ShoppingList({
   onRemove,
   onBranch,
   onFocus,
+  onOpenCart,
 }: {
   items: Selection[];
   active: BranchId | null;
   onRemove: (id: ProductId) => void;
   onBranch: (id: ProductId, branch: BranchId | null) => void;
   onFocus: (id: BranchId) => void;
+  onOpenCart?: () => void;
 }) {
   const { t } = useLang();
   const total = totals(items);
@@ -84,7 +86,10 @@ export default function ShoppingList({
                   <>
                     <button
                       className="text-button"
-                      onClick={() => onFocus(branch.id)}
+                      onClick={() => {
+                        onFocus(branch.id);
+                        onOpenCart?.();
+                      }}
                     >
                       <MapPin size={13} /> {t.shoppingList.seeOnMap}
                     </button>

@@ -7,6 +7,24 @@ export interface Evidence {
   detail: string;
   source: string | null;
 }
+export interface ProductAttribute {
+  name: string;
+  value: string;
+  source: string;
+}
+export interface StoreProfile {
+  name: string;
+  domain: string;
+  url: string;
+  description: string | null;
+  image: string | null;
+  seller_name: string | null;
+  seller_url: string | null;
+  contacts: string[];
+  policy_links: string[];
+  social_links: string[];
+  evidence: Evidence[];
+}
 export interface Risk {
   level: "bajo" | "medio" | "alto" | "información insuficiente";
   explanation: string;
@@ -37,6 +55,9 @@ export interface Product {
   url: string;
   store: string;
   image: string | null;
+  images: string[];
+  description: string | null;
+  specifications: ProductAttribute[];
   brand: string | null;
   model: string | null;
   variant: string | null;
@@ -67,6 +88,7 @@ export interface Analysis {
     | "error";
   created_at: string;
   product: Product | null;
+  store_profile: StoreProfile | null;
   risk: Risk | null;
   alternatives: Product[];
   limitations: string[];

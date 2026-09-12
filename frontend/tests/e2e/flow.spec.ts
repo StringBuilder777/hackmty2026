@@ -7,6 +7,8 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(page).toHaveTitle(/BuenPaso/);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
   await expect(
     page.getByRole("heading", { name: "Compra con más contexto." }),
   ).toBeVisible();
@@ -19,31 +21,54 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
     page.getByRole("heading", { name: "Compara tus opciones" }),
   ).toBeVisible();
   await expect(page.getByText(/bandera.*verde/i)).toBeVisible();
+  await expect(page.getByText("Empresa / marca", { exact: true })).toBeVisible();
+  await expect(page.getByText("Marketplace Demo", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Vendedor de ejemplo", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".merchant-logo img")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Agregar Demo Centro", exact: true })
     .click();
   await expect(
     page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
   ).toBeVisible();
+  await page.getByRole("link", { name: "Explorar", exact: true }).click();
   await page
     .getByRole("button", { name: "Agregar Demo San Pedro", exact: true })
     .click();
+  await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Explorar", exact: true }).click();
   await page
     .getByRole("button", { name: "Agregar Demo Online", exact: true })
     .click();
   await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: /Mi lista/ }).click();
+  await expect(
     page.getByRole("heading", { name: "Mi lista (3)" }),
   ).toBeVisible();
-  await expect(page.locator(".stop-icon")).toHaveCount(2);
   await expect(page.locator(".total")).toContainText("$22,446.00 MXN");
   await expect(page.locator(".total")).toContainText("2 costo(s)");
+  await page
+    .getByLabel("Sucursal de Demo Centro")
+    .selectOption("demo-obispado");
+  await page
+    .getByRole("button", { name: "Ver en mapa", exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toBeVisible();
+  await expect(page.locator(".stop-icon")).toHaveCount(2);
   await expect(page.locator(".route-panel")).toContainText("Ruta recomendada", {
     timeout: 25000,
   });
   await expect(page.locator(".leaflet-overlay-pane path")).toHaveCount(1);
-  await page
-    .getByLabel("Sucursal de Demo Centro")
-    .selectOption("demo-obispado");
   await expect(page.locator(".route-panel")).toContainText("Ruta recomendada", {
     timeout: 25000,
   });
@@ -57,11 +82,7 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   await expect(page.locator(".route-panel")).toContainText("Ruta recomendada", {
     timeout: 25000,
   });
-  // A source card focuses the matching marker; responsive layout never overflows.
-  await page
-    .getByRole("button", { name: "Ver en mapa", exact: true })
-    .first()
-    .click();
+  // The list opens the separate cart view and focuses its matching marker.
   await expect(page.locator(".stop-icon.selected")).toHaveCount(1);
   expect(
     await page.evaluate(
@@ -75,6 +96,7 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   await expect
     .poll(() =>
       page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
+      { timeout: 15000 },
     )
     .toBe(true);
   await expect
@@ -87,13 +109,15 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
     )
     .toBe(3);
   await context.setOffline(true);
+  await expect(page.locator(".route-panel")).toContainText("Sin conexión");
+  await expect(page.locator(".leaflet-tile")).toHaveCount(0);
+  await page.getByRole("link", { name: "Explorar", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Analizar", exact: true }),
   ).toBeDisabled();
-  await expect(page.locator(".route-panel")).toContainText("Sin conexión");
-  await expect(page.locator(".leaflet-tile")).toHaveCount(0);
   await page.reload();
   await page.getByRole("button", { name: "Demo", exact: true }).click();
+  await page.getByRole("link", { name: /Mi lista/ }).click();
   await expect(
     page.getByRole("heading", { name: "Mi lista (3)" }),
   ).toBeVisible();
