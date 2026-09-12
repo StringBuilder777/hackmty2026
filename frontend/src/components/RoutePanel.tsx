@@ -1,6 +1,7 @@
 import { Navigation, RotateCcw, Route as RouteIcon } from "lucide-react";
 import type { Route, Stop } from "@/lib/types";
 import { dateLabel } from "@/lib/shopping";
+import { useLang } from "@/lib/i18n";
 export default function RoutePanel({
   route,
   stops,
@@ -16,25 +17,22 @@ export default function RoutePanel({
   online: boolean;
   retry: () => void;
 }) {
+  const { t } = useLang();
   return (
     <section className="route-panel" aria-live="polite">
       <div className="route-title">
         <RouteIcon size={21} />
-        <h2>Tu recorrido de pickup</h2>
+        <h2>{t.routePanel.title}</h2>
         {stops.length > 0 && (
-          <span>
-            {stops.length} parada{stops.length > 1 ? "s" : ""}
-          </span>
+          <span>{t.routePanel.stopsCount(stops.length)}</span>
         )}
       </div>
       {!online ? (
-        <p>
-          Sin conexión. Conservamos tus paradas; la ruta no está disponible.
-        </p>
+        <p>{t.routePanel.offline}</p>
       ) : !stops.length ? (
-        <p>Agrega una tienda con sucursal para crear una ruta.</p>
+        <p>{t.routePanel.noStops}</p>
       ) : loading ? (
-        <p className="loading-line">Consultando recorrido por calles…</p>
+        <p className="loading-line">{t.routePanel.loading}</p>
       ) : route?.status === "available" ? (
         <>
           <div className="route-stats">
@@ -43,14 +41,14 @@ export default function RoutePanel({
               {((route.distance_m || 0) / 1000).toFixed(1)} km
             </strong>
             <strong>≈ {Math.ceil((route.duration_s || 0) / 60)} min</strong>
-            <span>Ruta recomendada</span>
+            <span>{t.routePanel.recommended}</span>
           </div>
-          <div className="route-timeline" aria-label="Orden de paradas">
+          <div className="route-timeline" aria-label={t.routePanel.stopsOrderAria}>
             <div className="route-stop route-origin">
               <span aria-hidden="true" />
               <div>
-                <strong>Origen: {originName}</strong>
-                <small>Punto de salida</small>
+                <strong>{t.routePanel.origin(originName)}</strong>
+                <small>{t.routePanel.startPoint}</small>
               </div>
             </div>
             {route.ordered_stops.map((stop, index) => (
@@ -58,25 +56,25 @@ export default function RoutePanel({
                 <span aria-hidden="true">{index + 1}</span>
                 <div>
                   <strong>{stop.name}</strong>
-                  <small>{stop.products?.join(" · ") || "Parada de pickup"}</small>
+                  <small>{stop.products?.join(" · ") || t.routePanel.pickupStop}</small>
                 </div>
               </div>
             ))}
           </div>
           <details className="route-method">
-            <summary>Cómo calculamos esta ruta</summary>
+            <summary>{t.routePanel.howWeCalculated}</summary>
             <p>{route.message}</p>
             <small>
               {route.provider} · {dateLabel(route.checked_at)}
-              {route.demo ? " · destinos ficticios" : ""}
+              {route.demo ? t.routePanel.fictitiousStops : ""}
             </small>
           </details>
         </>
       ) : (
         <>
-          <p>{route?.message || "No fue posible calcular la ruta."}</p>
+          <p>{route?.message || t.routePanel.noRoute}</p>
           <button className="text-button" onClick={retry}>
-            <RotateCcw size={13} /> Reintentar ruta
+            <RotateCcw size={13} /> {t.routePanel.retry}
           </button>
         </>
       )}
