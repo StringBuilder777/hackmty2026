@@ -1,0 +1,16 @@
+[
+  {
+    "domain": "shop.example.com",
+    "gtin": null,
+    "branch": {
+      "id": "example-branch",
+      "name": "EJEMPLO: reemplazar con sucursal documentada",
+      "address": "EJEMPLO: reemplazar con dirección verificada",
+      "lat": 25.6714,
+      "lng": -100.3105,
+      "source": "https://example.com/branch-source",
+      "inventory": "pending",
+      "inventory_checked_at": null
+    }
+  }
+]

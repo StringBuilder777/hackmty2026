@@ -1,0 +1,168 @@
+import asyncio
+import socket
+import pytest
+from pydantic import ValidationError
+from app.models import Product, Stop, Point, RouteInput, AnalysisInput
+from app.services.fetch import validate_url, is_public, PublicResolver
+from app.services.search import classify
+from app.services.routing import group_stops, recommend, calculate_route
+from app.services.extraction import extract
+from app.services.risk import evaluate
+
+@pytest.mark.parametrize('url', [
+    'file:///etc/passwd', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/',
+    'http://127.1/', 'http://2130706433/', 'http://10.0.0.1/', 'http://169.254.169.254/latest/meta-data/',
+    'http://[::1]/', 'http://[::ffff:127.0.0.1]/', 'http://192.168.1.3/',
+    'https://example.com:8080', 'https://user:pass@example.com/', 'https://x.local/',
+    'https://example.com\\@127.0.0.1', 'http://224.0.0.1/', 'http://100.64.0.1/',
+])
+def test_reject_unsafe_url(url):
+    with pytest.raises(ValueError): validate_url(url)
+
+@pytest.mark.parametrize('url', ['https://example.com/product', 'http://example.org/', 'https://example.com:443'])
+def test_accept_public_url(url):
+    assert validate_url(url)
+
+@pytest.mark.parametrize('ip', ['::1', '::ffff:8.8.8.8', '2002:7f00:1::', '192.0.2.1', '0.0.0.0', '169.254.169.254', '100.64.1.1'])
+def test_reject_reserved_ip(ip):
+    assert not is_public(ip)
+
+
+def test_dns_mixed_public_private_rejected(monkeypatch):
+    async def run():
+        async def fake(*args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443)), (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 443))]
+        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', fake)
+        with pytest.raises(ValueError, match='DNS bloqueado'):
+            await PublicResolver().resolve('rebind.example.com', 443)
+    asyncio.run(run())
+
+
+def test_resolver_pins_validated_addresses(monkeypatch):
+    async def run():
+        async def fake(*args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
+        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', fake)
+        resolved = await PublicResolver().resolve('shop.example.com', 443)
+        assert resolved[0]['host'] == '8.8.8.8'
+        assert resolved[0]['hostname'] == 'shop.example.com'
+    asyncio.run(run())
+
+
+def product(**changes):
+    data = dict(id='a', name='Headphones', url='https://example.com', store='example.com', brand='Sony', model='WH-1000XM5', variant='Negro', condition='NewCondition')
+    return Product(**(data | changes))
+
+
+def test_identical_requires_variant_and_condition():
+    original = product()
+    assert classify(original, product(id='b'))[0] == 'identical'
+    for changes in [{'variant': 'Plata'}, {'variant': None}, {'condition': 'UsedCondition'}, {'model': 'WH-1000XM4'}, {'model': None}]:
+        assert classify(original, product(**changes))[0] == 'similar'
+
+
+def test_sku_is_not_cross_store_identifier():
+    assert classify(product(sku='123', model=None), product(sku='123'))[0] == 'similar'
+
+
+def test_gtin_conflicts_and_unknown_condition():
+    assert classify(product(gtin='123'), product(gtin='456'))[0] == 'similar'
+    assert classify(product(gtin='123', condition=None), product(gtin='123', condition=None))[0] == 'similar'
+
+
+def test_branch_grouping_and_conflict():
+    a = Stop(id='a', name='Centro', lat=25.67, lng=-100.31)
+    b = Stop(id='b', name='Otra', lat=25.65, lng=-100.36)
+    assert group_stops([a, a, b]) == [a, b]
+    with pytest.raises(ValueError): group_stops([a, a.model_copy(update={'lat': 25.0})])
+    assert recommend(Point(lat=25.67, lng=-100.31), [b, a]) == [a, b]
+
+
+def test_provider_failure_has_no_fake_line():
+    class Broken:
+        name = 'test'
+        async def calculate(self, points, mode): raise ValueError('Proveedor no disponible')
+    req = RouteInput(origin=Point(lat=25.67, lng=-100.31), stops=[Stop(id='a', name='Centro', lat=25.68, lng=-100.32)])
+    result = asyncio.run(calculate_route(req, Broken()))
+    assert result.status == 'unavailable' and result.coordinates == []
+    assert len(result.ordered_stops) == 1
+
+
+def test_extraction_preserves_unknown_shipping_and_unsafe_image():
+    html = '''<script type="application/ld+json">{"@type":"Product","name":"Audífonos","brand":{"name":"Sony"},"color":"Negro","image":"javascript:alert(1)","offers":{"price":"5999","priceCurrency":"MXN"}}</script>'''
+    p = extract(html, 'https://example.com')
+    assert p.price == 5999 and p.shipping is None and p.total is None and p.image is None
+
+
+def test_https_alone_does_not_prove_trust():
+    result = evaluate('<p>Perfectly safe shop</p>', 'https://example.com', 'https://example.com')
+    assert result.level == 'información insuficiente'
+    assert any(e.status == 'unavailable' for e in result.evidence)
+
+
+def test_invalid_coordinates_and_nan():
+    for lat in [91, float('nan'), float('inf')]:
+        with pytest.raises(ValidationError): Point(lat=lat, lng=0)
+
+
+def test_known_mexican_shipping_is_included():
+    html = '''<script type="application/ld+json">{"@type":"Product","name":"Audífonos","offers":{"price":"100","priceCurrency":"MXN","shippingDetails":{"shippingDestination":{"addressCountry":"MX"},"shippingRate":{"value":25,"currency":"MXN"}}}}</script>'''
+    p = extract(html, 'https://example.com')
+    assert p.shipping == 25 and p.total == 125
+
+
+def test_redirect_to_private_host_is_never_fetched(monkeypatch):
+    from app.services import fetch
+    requested = []
+    class Response:
+        status = 302
+        headers = {'Location': 'http://169.254.169.254/latest/meta-data/'}
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+    class Session:
+        def __init__(self, **kwargs): self.connector = kwargs['connector']
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): await self.connector.close()
+        def get(self, url, **kwargs):
+            requested.append(url)
+            return Response()
+    monkeypatch.setattr(fetch.aiohttp, 'ClientSession', Session)
+    with pytest.raises(ValueError, match='privada|reservada'):
+        asyncio.run(fetch.fetch_html('https://example.com'))
+    assert requested == ['https://example.com']
+
+
+def test_search_adapter_extracts_only_related_products(monkeypatch):
+    from app.services import search
+    class Provider:
+        async def urls(self, query): return ['https://shop.example.com/headphones', 'https://shop.example.com/other']
+    async def fake_fetch(url):
+        name = 'Sony WH-1000XM5 audífonos' if url.endswith('headphones') else 'Mesa de comedor'
+        model = 'WH-1000XM5' if url.endswith('headphones') else 'TABLE'
+        return f'<script type="application/ld+json">{{"@type":"Product","name":"{name}","brand":"Sony","model":"{model}","color":"Negro","offers":{{"price":100,"priceCurrency":"MXN","itemCondition":"NewCondition"}}}}</script>', url
+    monkeypatch.setattr(search, 'fetch_html', fake_fetch)
+    monkeypatch.delenv('BRANCH_CATALOG_PATH', raising=False)
+    found, notes = asyncio.run(search.alternatives(product(), Provider()))
+    assert len(found) == 1 and found[0].match == 'identical' and found[0].shipping is None
+
+
+def test_catalog_never_infers_inventory_from_domain(tmp_path, monkeypatch):
+    import json
+    from app.services.branches import resolve
+    catalog = tmp_path / 'branches.json'
+    catalog.write_text(json.dumps([{'domain': 'example.com', 'gtin': 'other', 'branch': {'id': 'a', 'name': 'Centro', 'address': 'Example', 'source': 'https://example.com/branch', 'lat': 25.67, 'lng': -100.31, 'inventory': 'confirmed', 'inventory_checked_at': '2026-09-12T00:00:00Z'}}]))
+    monkeypatch.setenv('BRANCH_CATALOG_PATH', str(catalog))
+    branch = resolve(product(gtin='123'))[0]
+    assert branch.inventory == 'pending' and branch.inventory_checked_at is None
+
+
+def test_provider_json_reads_all_chunks_and_caps_size():
+    from app.services.http import bounded_json
+    class Content:
+        async def iter_chunked(self, size):
+            for chunk in [b'{"ok":', b'true}']: yield chunk
+    class Response:
+        content = Content()
+    assert asyncio.run(bounded_json(Response())) == {'ok': True}
+    with pytest.raises(ValueError, match='límite'):
+        asyncio.run(bounded_json(Response(), 3))
