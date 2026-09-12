@@ -23,6 +23,13 @@ class Risk(Model):
     explanation: str
     checked_at: str = Field(default_factory=now)
     evidence: list[Evidence]
+    agent_assessment: 'AgentAssessment | None' = None
+
+
+class AgentAssessment(Model):
+    level: Literal['bajo', 'medio', 'alto', 'información insuficiente']
+    explanation: str = Field(min_length=1, max_length=800)
+    limitations: list[str] = Field(default_factory=list, max_length=4)
 
 
 class Point(Model):

@@ -10,14 +10,21 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   await expect(
     page.getByRole("heading", { name: "Compra con más contexto." }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Demo", exact: true }).click();
   await page.getByRole("button", { name: "Analizar", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Compara tus opciones" }),
   ).toBeVisible();
+  await expect(page.getByText(/bandera.*verde/i)).toBeVisible();
   await page
     .getByRole("button", { name: "Agregar Demo Centro", exact: true })
     .click();
+  await expect(
+    page.getByRole("region", { name: "Mapa y recorrido de pickup en Monterrey" }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Agregar Demo San Pedro", exact: true })
     .click();

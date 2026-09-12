@@ -4,12 +4,14 @@ import { dateLabel } from "@/lib/shopping";
 export default function RoutePanel({
   route,
   stops,
+  originName,
   loading,
   online,
   retry,
 }: {
   route: Route | null;
   stops: Stop[];
+  originName: string;
   loading: boolean;
   online: boolean;
   retry: () => void;
@@ -18,7 +20,7 @@ export default function RoutePanel({
     <section className="route-panel" aria-live="polite">
       <div className="route-title">
         <RouteIcon size={21} />
-        <h2>Tu recorrido</h2>
+        <h2>Tu recorrido de pickup</h2>
         {stops.length > 0 && (
           <span>
             {stops.length} parada{stops.length > 1 ? "s" : ""}
@@ -30,7 +32,7 @@ export default function RoutePanel({
           Sin conexión. Conservamos tus paradas; la ruta no está disponible.
         </p>
       ) : !stops.length ? (
-        <p>Agrega una tienda para crear una ruta.</p>
+        <p>Agrega una tienda con sucursal para crear una ruta.</p>
       ) : loading ? (
         <p className="loading-line">Consultando recorrido por calles…</p>
       ) : route?.status === "available" ? (
@@ -43,13 +45,26 @@ export default function RoutePanel({
             <strong>≈ {Math.ceil((route.duration_s || 0) / 60)} min</strong>
             <span>Ruta recomendada</span>
           </div>
-          <details>
-            <summary>Ver orden de paradas y cálculo</summary>
-            <ol>
-              {route.ordered_stops.map((stop) => (
-                <li key={stop.id}>{stop.name}</li>
-              ))}
-            </ol>
+          <div className="route-timeline" aria-label="Orden de paradas">
+            <div className="route-stop route-origin">
+              <span aria-hidden="true" />
+              <div>
+                <strong>Origen: {originName}</strong>
+                <small>Punto de salida</small>
+              </div>
+            </div>
+            {route.ordered_stops.map((stop, index) => (
+              <div className="route-stop" key={stop.id}>
+                <span aria-hidden="true">{index + 1}</span>
+                <div>
+                  <strong>{stop.name}</strong>
+                  <small>{stop.products?.join(" · ") || "Parada de pickup"}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+          <details className="route-method">
+            <summary>Cómo calculamos esta ruta</summary>
             <p>{route.message}</p>
             <small>
               {route.provider} · {dateLabel(route.checked_at)}

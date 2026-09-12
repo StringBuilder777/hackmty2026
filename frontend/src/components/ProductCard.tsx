@@ -4,7 +4,6 @@ import {
   ExternalLink,
   Headphones,
   MapPin,
-  Plus,
   ShoppingBag,
 } from "lucide-react";
 import type { Product } from "@/lib/types";
@@ -96,7 +95,8 @@ export default function ProductCard({
           disabled={added}
           onClick={onAdd}
         >
-          {added ? <Check size={18} /> : <Plus size={18} />}
+          {added && <Check size={16} />}
+          <span>{added ? "Agregado" : "Agregar"}</span>
         </button>
       </div>
       <details className="offer-details">

@@ -22,3 +22,13 @@ def test_errors_are_consistent():
         assert client.get('/analyses/missing').status_code == 404
         large = client.post('/analyses', content=b'x' * 20000, headers={'Content-Type': 'application/json'})
         assert large.status_code == 413
+
+
+def test_cors_allows_the_next_development_port():
+    with TestClient(app) as client:
+        response = client.options('/analyses', headers={
+            'Origin': 'http://localhost:3001',
+            'Access-Control-Request-Method': 'POST',
+        })
+        assert response.status_code == 200
+        assert response.headers['access-control-allow-origin'] == 'http://localhost:3001'

@@ -3,11 +3,13 @@ import socket
 import pytest
 from pydantic import ValidationError
 from app.models import Product, Stop, Point, RouteInput, AnalysisInput
-from app.services.fetch import validate_url, is_public, PublicResolver
-from app.services.search import classify
+from app.services.fetch import HARD_MAX_BYTES, MIN_MAX_BYTES, max_html_bytes, validate_url, is_public, PublicResolver
+from app.services.search import canonical_url, classify, related
 from app.services.routing import group_stops, recommend, calculate_route
 from app.services.extraction import extract
-from app.services.risk import evaluate
+from app.services.risk import audit_consistency, comparable_host, evaluate
+from app.services.domain import _creation_date
+from app.services.agent import _parse, _payload
 
 @pytest.mark.parametrize('url', [
     'file:///etc/passwd', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/',
@@ -49,6 +51,15 @@ def test_resolver_pins_validated_addresses(monkeypatch):
     asyncio.run(run())
 
 
+def test_html_limit_is_configurable_but_safely_bounded(monkeypatch):
+    monkeypatch.setenv('MAX_HTML_BYTES', 'not-a-number')
+    assert max_html_bytes() == 8 * 1024 * 1024
+    monkeypatch.setenv('MAX_HTML_BYTES', '1')
+    assert max_html_bytes() == MIN_MAX_BYTES
+    monkeypatch.setenv('MAX_HTML_BYTES', str(100 * 1024 * 1024))
+    assert max_html_bytes() == HARD_MAX_BYTES
+
+
 def product(**changes):
     data = dict(id='a', name='Headphones', url='https://example.com', store='example.com', brand='Sony', model='WH-1000XM5', variant='Negro', condition='NewCondition')
     return Product(**(data | changes))
@@ -63,6 +74,18 @@ def test_identical_requires_variant_and_condition():
 
 def test_sku_is_not_cross_store_identifier():
     assert classify(product(sku='123', model=None), product(sku='123'))[0] == 'similar'
+
+
+def test_generic_product_similarity_is_not_limited_to_headphones():
+    nas = product(name='Ugreen NAS 6-Bahías i5-1235U 8GB RAM M.2 128GB SATA III', model=None)
+    same_family = product(name='NAS Ugreen DXP6800 Pro Intel Core i5-1235U 6 Bahías SATA 8GB RAM', model=None)
+    unrelated = product(name='Mesa de comedor de madera para seis personas', brand=None, model=None)
+    assert related(nas, same_family)
+    assert not related(nas, unrelated)
+
+
+def test_search_deduplicates_tracking_variants_of_original_url():
+    assert canonical_url('https://shop.example/item?a=1') == canonical_url('https://shop.example/item?b=2')
 
 
 def test_gtin_conflicts_and_unknown_condition():
@@ -94,10 +117,66 @@ def test_extraction_preserves_unknown_shipping_and_unsafe_image():
     assert p.price == 5999 and p.shipping is None and p.total is None and p.image is None
 
 
+def test_amazon_style_html_fallback_extracts_commercial_fields():
+    html = '''<html><span id="productTitle">AOC Monitor 22 Pulgadas</span>
+    <a id="bylineInfo">Visita la tienda de AOC</a><div class="a-price"><span class="a-offscreen">$1,300.00</span></div>
+    <input id="ASIN" value="B0DY99NW1N"><table><tr><th>Modelo</th><td>22B35HM23</td></tr></table></html>'''
+    result = extract(html, 'https://www.amazon.com.mx/dp/B0DY99NW1N')
+    assert result.name == 'AOC Monitor 22 Pulgadas'
+    assert result.brand == 'AOC' and result.model == '22B35HM23' and result.sku == 'B0DY99NW1N'
+    assert result.price == 1300 and result.currency == 'MXN'
+
+
 def test_https_alone_does_not_prove_trust():
     result = evaluate('<p>Perfectly safe shop</p>', 'https://example.com', 'https://example.com')
     assert result.level == 'información insuficiente'
     assert any(e.status == 'unavailable' for e in result.evidence)
+
+
+def test_www_redirect_is_same_domain_and_store_reviews_are_detected():
+    html = '<div id="averageCustomerReviews">4.4 de 5 estrellas (294)</div>'
+    result = evaluate(html, 'https://amazon.com.mx/item', 'https://www.amazon.com.mx/item')
+    assert comparable_host('www.amazon.com.mx') == comparable_host('amazon.com.mx')
+    assert next(e for e in result.evidence if e.title == 'Consistencia del dominio').status == 'observed'
+    review = next(e for e in result.evidence if e.title == 'Reseñas en la tienda')
+    assert review.status == 'observed' and '294' in review.detail
+
+
+def test_return_to_query_is_not_mistaken_for_refund_policy():
+    html = '<a href="/signin?openid.return_to=/product">Iniciar sesión</a>'
+    result = evaluate(html, 'https://example.com/item', 'https://example.com/item')
+    assert next(e for e in result.evidence if e.title == 'Devoluciones').status == 'unavailable'
+
+
+def test_html_security_and_product_metadata_checks():
+    html = '<script src="http://cdn.example.org/app.js"></script><script type="application/ld+json">{"@type":"Product"}</script>'
+    result = evaluate(html, 'https://example.com', 'https://example.com')
+    assert next(e for e in result.evidence if e.title == 'Contenido mixto').status == 'warning'
+    assert next(e for e in result.evidence if e.title == 'Datos estructurados del producto').status == 'observed'
+
+
+def test_consistency_audit_reports_missing_identity_and_spec_changes():
+    original = product(name='Ugreen NAS 6 bahías i5-1235U 8GB', model=None, variant=None, gtin=None)
+    option = product(id='b', name='Ugreen NAS 4 bahías i5-1235U 8GB', model=None, variant=None, gtin=None, match='similar')
+    risk = evaluate('<p>shop</p>', original.url, original.url)
+    audit_consistency(risk, original, [option])
+    assert next(e for e in risk.evidence if e.title == 'Identificadores del producto').status == 'unavailable'
+    assert next(e for e in risk.evidence if e.title == 'Inconsistencias entre opciones').status == 'warning'
+
+
+def test_rdap_registration_date_is_read_without_treating_domain_as_trusted():
+    created = _creation_date({'events': [{'eventAction': 'registration', 'eventDate': '2024-01-02T03:04:05Z'}]})
+    assert created is not None and created.year == 2024
+
+
+def test_agent_contract_uses_only_bounded_evidence_and_validates_its_json():
+    risk = evaluate('<p>shop</p>', 'https://example.com', 'https://example.com')
+    payload = _payload(risk, product(), [product(id=str(index)) for index in range(8)])
+    assert len(payload['contents'][0]['parts'][0]['text']) < 10_000
+    assert len(__import__('json').loads(payload['contents'][0]['parts'][0]['text'])['alternatives']) == 5
+    assert payload['generationConfig']['thinkingConfig']['thinkingBudget'] == 0
+    assessment = _parse({'candidates': [{'content': {'parts': [{'text': '{"level":"medio","explanation":"Revisa las señales disponibles.","limitations":["No confirma identidad."]}'}]}}]})
+    assert assessment.level == 'medio'
 
 
 def test_invalid_coordinates_and_nan():
@@ -144,6 +223,17 @@ def test_search_adapter_extracts_only_related_products(monkeypatch):
     monkeypatch.delenv('BRANCH_CATALOG_PATH', raising=False)
     found, notes = asyncio.run(search.alternatives(product(), Provider()))
     assert len(found) == 1 and found[0].match == 'identical' and found[0].shipping is None
+
+
+def test_search_rejects_non_commercial_article_without_price(monkeypatch):
+    from app.services import search
+    class Provider:
+        async def urls(self, query): return ['https://news.example.com/article']
+    async def fake_fetch(url):
+        return '<html><title>Sony WH-1000XM5 audífonos: presentación y noticias</title></html>', url
+    monkeypatch.setattr(search, 'fetch_html', fake_fetch)
+    found, _ = asyncio.run(search.alternatives(product(), Provider()))
+    assert found == []
 
 
 def test_catalog_never_infers_inventory_from_domain(tmp_path, monkeypatch):

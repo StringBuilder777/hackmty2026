@@ -1,12 +1,28 @@
 """Bounded HTML fetch with DNS validation at connection time (no re-resolution gap)."""
 import asyncio
 import ipaddress
+import os
 import socket
 from urllib.parse import urlsplit, urljoin
 import aiohttp
 from aiohttp.abc import AbstractResolver
 
-MAX_BYTES = 2 * 1024 * 1024
+DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+MIN_MAX_BYTES = 1 * 1024 * 1024
+HARD_MAX_BYTES = 16 * 1024 * 1024
+
+
+def max_html_bytes() -> int:
+    """Return a bounded decompressed HTML limit configurable by operators."""
+    try:
+        configured = int(os.getenv('MAX_HTML_BYTES', str(DEFAULT_MAX_BYTES)))
+    except ValueError:
+        configured = DEFAULT_MAX_BYTES
+    return min(max(configured, MIN_MAX_BYTES), HARD_MAX_BYTES)
+
+
+def size_error(limit: int) -> ValueError:
+    return ValueError(f'La página excede el límite seguro de {limit // (1024 * 1024)} MB.')
 
 
 def is_public(address: str) -> bool:
@@ -64,10 +80,11 @@ class PublicResolver(AbstractResolver):
 
 async def fetch_html(url: str) -> tuple[str, str]:
     async with asyncio.timeout(18):
+        byte_limit = max_html_bytes()
         connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False, limit=4)
         timeout = aiohttp.ClientTimeout(total=12, connect=5, sock_read=5)
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout, trust_env=False, auto_decompress=False,
-                                        headers={'User-Agent': 'BuenPasoMVP/0.1', 'Accept': 'text/html', 'Accept-Encoding': 'identity'}) as session:
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout, trust_env=False, auto_decompress=True,
+                                        headers={'User-Agent': 'BuenPasoMVP/0.1', 'Accept': 'text/html', 'Accept-Encoding': 'gzip, deflate'}) as session:
             for attempt in range(4):
                 validate_url(url)
                 async with session.get(url, allow_redirects=False) as response:
@@ -80,14 +97,14 @@ async def fetch_html(url: str) -> tuple[str, str]:
                         raise ValueError(f'La página respondió HTTP {response.status}. No se evaden bloqueos ni autenticación.')
                     if 'text/html' not in response.headers.get('Content-Type', '').lower():
                         raise ValueError('El recurso no es una página HTML.')
-                    if response.headers.get('Content-Encoding', 'identity') != 'identity':
-                        raise ValueError('La página no admite una descarga sin compresión dentro de los límites del MVP.')
-                    if response.content_length and response.content_length > MAX_BYTES:
-                        raise ValueError('La página excede el límite de 2 MB.')
+                    if response.content_length and response.content_length > byte_limit:
+                        raise size_error(byte_limit)
                     body = bytearray()
                     async for chunk in response.content.iter_chunked(32768):
                         body.extend(chunk)
-                        if len(body) > MAX_BYTES:
-                            raise ValueError('La página excede el límite de 2 MB.')
+                        # aiohttp yields decompressed chunks here, so the cap also
+                        # protects against highly compressed oversized responses.
+                        if len(body) > byte_limit:
+                            raise size_error(byte_limit)
                     return body.decode('utf-8', errors='replace'), str(response.url)
     raise ValueError('No se pudo descargar la página.')

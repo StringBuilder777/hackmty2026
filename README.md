@@ -55,7 +55,7 @@ Los datos demo residen exclusivamente en `backend/app/services/demo.py`: tiendas
 - Rutas en auto con OSRM; orden por vecino más cercano y trazado real por calles. Se llama **ruta recomendada**, sin garantía de optimalidad ni tráfico en vivo.
 - Lista local, selección de sucursal, agrupación de paradas, origen manual/geolocalizado y mapa sincronizado.
 
-**Reputación externa, antigüedad de dominio y detección independiente de suplantaciones no están integradas.** Se reportan como no disponibles. El nivel normalmente es “información insuficiente”; las advertencias observadas pueden producir “medio”. No se emiten “bajo” o “alto” sin evidencia suficiente, aunque están previstos en el contrato. HTTPS nunca equivale a tienda segura.
+La antigüedad de dominio se consulta mediante RDAP cuando el registro público la publica. Es una señal técnica: un dominio reciente requiere cautela, pero uno antiguo no acredita al vendedor ni evita suplantaciones. La reputación externa y la detección independiente de suplantaciones siguen sin integrarse y se reportan como no disponibles. El nivel normalmente es “información insuficiente”; las advertencias observadas pueden producir “medio”. No se emiten “bajo” o “alto” sin evidencia suficiente, aunque están previstos en el contrato. HTTPS nunca equivale a tienda segura.
 
 No hay un LLM configurado: el agente del MVP es un flujo determinista de extracción → señales → búsqueda → comparación. Las páginas externas son datos no confiables; no se ejecuta su contenido ni se interpreta como instrucciones.
 
@@ -66,16 +66,19 @@ Credenciales exclusivamente en `backend/.env`, ignorado por Git y excluido de la
 | Variable | Uso | Predeterminado / pendiente |
 |---|---|---|
 | `BRAVE_SEARCH_API_KEY` | Búsqueda real mediante Brave Search | Sin clave: análisis funciona y explica exactamente qué falta; no se fabrican alternativas. |
+| `GEMINI_API_KEY` | Explicación complementaria de gravedad basada en señales ya verificadas | Opcional; nunca se expone al frontend. Sin clave, el análisis sigue funcionando. |
+| `GEMINI_MODEL` | Modelo Gemini autorizado para la explicación | `gemini-2.5-flash` o `gemini-2.5-flash-lite`. |
+| `MAX_HTML_BYTES` | Límite del HTML descomprimido por página | `8388608` (8 MiB), limitado internamente al rango de 1–16 MiB. |
 | `ROUTE_PROVIDER` | `osrm` u `ors` | `osrm` |
 | `OSRM_BASE_URL` | Servidor OSRM con perfil de auto | `https://router.project-osrm.org` |
 | `ORS_API_KEY` | OpenRouteService para auto, a pie y bicicleta | Para caminar/ciclismo configurar además `ROUTE_PROVIDER=ors`. |
 | `BRANCH_CATALOG_PATH` | Catálogo curado de sucursales dentro del contenedor | Vacío: no se inventan ubicaciones de ofertas reales. |
-| `CORS_ORIGINS` | Orígenes frontend admitidos, separados por coma | `http://localhost:3000,http://127.0.0.1:3000` |
+| `CORS_ORIGINS` | Orígenes frontend admitidos, separados por coma | Incluye `localhost` y `127.0.0.1` en puertos 3000 y 3001 para desarrollo. |
 | `NEXT_PUBLIC_API_URL` | URL pública del backend, en `frontend/.env.local` | `http://localhost:8000`; no es una credencial. |
 
 Para sucursales reales, crear `backend/data/branches.json` usando el esquema de `branches.example.json`, reemplazando TODOS los valores ilustrativos por datos y enlaces documentados. Configurar `/app/data/branches.json` como `BRANCH_CATALOG_PATH` y reconstruir el contenedor. Asociar una sucursal a una tienda no confirma inventario. Solo se conserva `confirmed` si existe un GTIN coincidente y fecha de comprobación; aun así la interfaz pide confirmar antes de salir. El MVP no dispone de un servicio de inventario ni de geocodificación automática. Con catálogo vacío no hay paradas reales verificadas.
 
-Los adaptadores de búsqueda y rutas usan interfaces (`SearchProvider`, `RouteProvider`) reemplazables. Brave consulta hasta cinco resultados y extrae sus páginas públicas; solo retiene ofertas relacionadas con modelo/GTIN o categoría de audífonos y precio extraíble. La coincidencia idéntica exige marca/modelo/variante/condición completos, o GTIN y condición compatibles, sin contradicciones; un SKU aislado no identifica un producto entre tiendas.
+Los adaptadores de búsqueda y rutas usan interfaces (`SearchProvider`, `RouteProvider`) reemplazables. Brave consulta hasta diez resultados y extrae sus páginas públicas; conserva hasta ocho opciones relacionadas mediante identificadores y similitud de nombre. Una opción sin precio solo se conserva cuando la página publica metadatos comerciales como marca, SKU, GTIN o condición, para evitar presentar artículos informativos como tiendas. La coincidencia idéntica exige marca/modelo/variante/condición completos, o GTIN y condición compatibles, sin contradicciones; un SKU aislado no identifica un producto entre tiendas.
 
 ## API y límites
 
@@ -93,7 +96,7 @@ Los errores usan `{ "error": { "code": "...", "message": "..." } }`. Un proveedo
 - Bloqueo de redes locales, privadas, reservadas, multicast y metadatos; también IPs IPv4 no canónicas y túneles IPv6.
 - Validación de **todas** las IPs resueltas al conectar. Se conectan esas direcciones validadas manteniendo SNI/TLS; no existe una segunda resolución libre entre validación y conexión.
 - Redirecciones manuales (máximo tres), con validación en cada salto. Sin proxies del entorno.
-- HTML hasta 2 MB y 18 s globales; DNS hasta 4 s. No se acepta contenido comprimido si el servidor ignora `Accept-Encoding: identity`.
+- HTML descomprimido hasta 8 MiB por defecto y 18 s globales; DNS hasta 4 s. Se acepta `gzip`/`deflate` y el límite se aplica después de descomprimir para contener respuestas excesivas.
 - Hasta tres análisis simultáneos, doce pendientes, doscientos resultados retenidos y una hora de vida. Solicitudes POST hasta 16 KB y treinta por minuto por IP.
 - Un worker de Uvicorn: los trabajos están en memoria; reiniciar pierde los análisis del servidor, pero no la lista local. No es una cola distribuida ni un servicio público endurecido para producción. Backend publicado solo en loopback por compose.
 

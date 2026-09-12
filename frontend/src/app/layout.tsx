@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   description:
     "Evalúa señales de riesgo, compara audífonos y planea tu recorrido en Monterrey.",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "BuenPaso" },
 };
 export const viewport: Viewport = {

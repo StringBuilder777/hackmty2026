@@ -12,7 +12,9 @@ from fastapi.responses import JSONResponse
 from .models import AnalysisInput, Analysis, RouteInput
 from .services.fetch import fetch_html
 from .services.extraction import extract
-from .services.risk import evaluate, compare_price
+from .services.risk import audit_consistency, evaluate, compare_price
+from .services.domain import registration_evidence
+from .services.agent import assess
 from .services.search import alternatives
 from .services.branches import resolve
 from .services.routing import calculate_route
@@ -31,7 +33,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title='BuenPaso API', version='0.1.0', lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(','), allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
+# The development server may select the next free port. Keep the local origins
+# explicit instead of using a wildcard, so a browser cannot read this API from
+# an unrelated site.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv(
+        'CORS_ORIGINS',
+        'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001',
+    ).split(','),
+    allow_methods=['GET', 'POST'],
+    allow_headers=['Content-Type'],
+)
 
 
 @app.exception_handler(HTTPException)
@@ -88,6 +101,8 @@ async def run_analysis(analysis: Analysis, url: str):
                 analysis.product.branches = resolve(analysis.product)
                 analysis.status = 'evaluating'
                 analysis.risk = evaluate(html, url, final)
+                domain = await registration_evidence(final)
+                analysis.risk.evidence.append(domain)
                 analysis.product.evidence = analysis.risk.evidence[:2]
                 analysis.status = 'searching'
                 try:
@@ -96,6 +111,12 @@ async def run_analysis(analysis: Analysis, url: str):
                 except Exception as exc:
                     analysis.limitations.append(str(exc) if isinstance(exc, ValueError) else 'La búsqueda externa no está disponible. Reintenta el análisis.')
                 compare_price(analysis.risk, analysis.product, analysis.alternatives)
+                audit_consistency(analysis.risk, analysis.product, analysis.alternatives)
+                analysis.risk.agent_assessment, agent_note = await assess(
+                    analysis.risk, analysis.product, analysis.alternatives,
+                )
+                if agent_note:
+                    analysis.limitations.append(agent_note)
                 analysis.limitations.append('Extracción de HTML y JSON-LD sin ejecutar JavaScript. No verifica identidad, reseñas ni inventario; no garantiza seguridad.')
                 analysis.status = 'completed'
         except Exception as exc:

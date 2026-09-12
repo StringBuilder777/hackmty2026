@@ -39,6 +39,7 @@ import type {
 import { dateLabel, groupStops } from "@/lib/shopping";
 import { readSnapshot } from "@/lib/storage";
 import EvidenceList from "./EvidenceList";
+import FlagSummary from "./FlagSummary";
 import ProductCard, { ProductImage } from "./ProductCard";
 import ShoppingList from "./ShoppingList";
 import RoutePanel from "./RoutePanel";
@@ -420,7 +421,7 @@ export default function Workspace() {
           </button>
         </form>
       </section>
-      <main className="workspace">
+      <main className={`workspace ${items.length === 0 ? "workspace-no-map" : ""}`}>
         <section
           className="results"
           id="resultados"
@@ -545,10 +546,23 @@ export default function Workspace() {
                 )}
               </div>
               {analysis.risk && (
-                <EvidenceList
-                  evidence={analysis.risk.evidence}
-                  label="Verificaciones y evidencias"
-                />
+                <>
+                  {analysis.risk.agent_assessment && (
+                    <section className="agent-assessment" aria-label="Explicación del agente de riesgo">
+                      <div>
+                        <span>Evaluación complementaria por IA</span>
+                        <strong>Gravedad: {analysis.risk.agent_assessment.level}</strong>
+                      </div>
+                      <p>{analysis.risk.agent_assessment.explanation}</p>
+                      <small>Interpreta las señales disponibles; no verifica la identidad de la tienda.</small>
+                    </section>
+                  )}
+                  <FlagSummary evidence={analysis.risk.evidence} />
+                  <EvidenceList
+                    evidence={analysis.risk.evidence}
+                    label="Ver detalle y fuentes de las verificaciones"
+                  />
+                </>
               )}
               <section className="comparison">
                 <div className="section-heading">
@@ -615,9 +629,9 @@ export default function Workspace() {
             <span>BuenPaso · HackMTY 2026</span>
           </footer>
         </section>
-        <section
+        {items.length > 0 && <section
           className="map-section"
-          aria-label="Mapa de tiendas en Monterrey"
+          aria-label="Mapa y recorrido de pickup en Monterrey"
         >
           <ShoppingMap
             stops={orderedStops}
@@ -738,11 +752,12 @@ export default function Workspace() {
           <RoutePanel
             route={route}
             stops={stops}
+            originName={originName}
             loading={online && stops.length > 0 && !route}
             online={online}
             retry={() => setRetry((value) => value + 1)}
           />
-        </section>
+        </section>}
       </main>
     </>
   );

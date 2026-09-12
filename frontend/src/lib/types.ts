@@ -12,6 +12,12 @@ export interface Risk {
   explanation: string;
   checked_at: string;
   evidence: Evidence[];
+  agent_assessment: AgentAssessment | null;
+}
+export interface AgentAssessment {
+  level: Risk["level"];
+  explanation: string;
+  limitations: string[];
 }
 export interface Point {
   lat: number;
