@@ -9,6 +9,8 @@ export default function ShoppingList({
   onBranch,
   onFocus,
   onOpenCart,
+  maxRadius,
+  setMaxRadius,
 }: {
   items: Selection[];
   active: BranchId | null;
@@ -16,6 +18,8 @@ export default function ShoppingList({
   onBranch: (id: ProductId, branch: BranchId | null) => void;
   onFocus: (id: BranchId) => void;
   onOpenCart?: () => void;
+  maxRadius?: number;
+  setMaxRadius?: (val: number) => void;
 }) {
   const { t } = useLang();
   const total = totals(items);
@@ -27,6 +31,24 @@ export default function ShoppingList({
         </h2>
         <ShoppingBag size={19} />
       </div>
+
+      {maxRadius !== undefined && setMaxRadius && (
+        <div className="my-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex justify-between items-center mb-1 text-sm font-medium">
+            <span>Radio de búsqueda de sucursales</span>
+            <span className="text-blue-600 font-bold">{maxRadius} km</span>
+          </div>
+          <input 
+            type="range" 
+            min="1" 
+            max="30" 
+            value={maxRadius} 
+            onChange={(e) => setMaxRadius(Number(e.target.value))}
+            className="w-full accent-blue-600 cursor-pointer"
+          />
+        </div>
+      )}
+
       {!items.length && (
         <div className="list-empty">
           <ShoppingBag size={24} />

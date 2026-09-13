@@ -7,7 +7,7 @@ import socket
 import aiohttp
 
 from ..models import AgentAssessment, Product, Risk, WebsiteProfile
-from .http import bounded_json
+from .http_client import bounded_json
 
 
 def forensic_narrative(scheme: str, entities: list[str], rule: str, peso: float, exhibits: list[object]) -> str:

@@ -261,6 +261,7 @@ class RouteInput(Model):
     origin: Point
     stops: list[Stop] = Field(min_length=1, max_length=10)
     mode: Literal['driving', 'walking', 'cycling'] = 'driving'
+    max_radius_km: float | None = Field(default=None, ge=0)
     demo: bool = False
 
 

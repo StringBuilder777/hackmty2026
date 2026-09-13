@@ -25,6 +25,7 @@ from .services.branches import resolve
 from .services.routing import calculate_route
 from .services.demo import populate
 from .services.forensic import create_demo_estate, inspect_forensic_estate, render_case_file, run_forensic_audit
+from .services.pickup import fetch_real_pickup_points
 
 jobs: dict[str, tuple[float, Analysis]] = {}
 last_case_file: str | None = None
@@ -184,7 +185,26 @@ async def get_alternatives(analysis_id: str):
 @app.post('/routes')
 async def route(payload: RouteInput):
     try:
-        return await calculate_route(payload)
+        # 1. Obtenemos puntos de entrega reales (Lockers, DHL, etc.) usando el radio del slider
+        real_points = await fetch_real_pickup_points(
+            origin=payload.origin,
+            max_radius_km=payload.max_radius_km
+        )
+        # 2. Si el usuario aún no ha seleccionado paradas específicas,
+        # rellenamos automáticamente con los puntos reales encontrados en su radio
+        if not payload.stops and real_points:
+            payload.stops = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "lat": p.lat,
+                    "lng": p.lng
+                }
+                for p in real_points[:5]  # Toma hasta 5 puntos reales cercanos dentro del radio
+            ]
+        # 3. Calcula y regresa la ruta optimizada con datos reales
+        return await calculate_route(payload, max_radius_km=payload.max_radius_km)
+
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
