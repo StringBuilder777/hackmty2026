@@ -9,7 +9,7 @@ from ..models import Product, Evidence
 from .extraction import extract
 from .fetch import fetch_html
 from .branches import resolve
-from .http import bounded_json
+from .http_client import bounded_json
 
 
 def norm(value: str | None) -> str:

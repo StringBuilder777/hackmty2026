@@ -99,6 +99,7 @@ export default function Workspace() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [origin, setOrigin] = useState<Point>(DEFAULT_ORIGIN);
   const [originName, setOriginName] = useState("Macroplaza");
+  const [maxRadius, setMaxRadius] = useState<number>(10); // 10 km por defecto
   const [transport, setTransport] = useState<Transport>("driving");
   const [picking, setPicking] = useState(false);
   const [active, setActive] = useState<BranchId | null>(null);
@@ -888,6 +889,8 @@ export default function Workspace() {
               loading={online && stops.length > 0 && !route}
               online={online}
               retry={() => setRetry((value) => value + 1)}
+              maxRadius={maxRadius}
+              setMaxRadius={setMaxRadius}
             />
           </section>
         )}

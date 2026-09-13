@@ -3,7 +3,7 @@ import os
 from typing import Protocol
 import aiohttp
 from ..models import Point, Stop, Route, RouteInput
-from .http import bounded_json
+from .http_client import bounded_json
 
 
 def group_stops(stops: list[Stop]) -> list[Stop]:
@@ -18,6 +18,30 @@ def group_stops(stops: list[Stop]) -> list[Stop]:
 def distance(a: Point, b: Point) -> float:
     lat = math.radians((a.lat + b.lat) / 2)
     return (a.lat - b.lat) ** 2 + ((a.lng - b.lng) * math.cos(lat)) ** 2
+
+
+def distance_in_km(a: Point, b: Point) -> float:
+    """Calcula la distancia real aproximada en kilómetros entre dos puntos geográficos (Haversine)."""
+    R = 6371.0
+    lat1, lon1 = math.radians(a.lat), math.radians(a.lng)
+    lat2, lon2 = math.radians(b.lat), math.radians(b.lng)
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    alpha = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.asin(math.sqrt(alpha))
+    return R * c
+
+
+def filter_stops_by_radius(origin: Point, stops: list[Stop], max_radius_km: float) -> list[Stop]:
+    """Filtra las entregas (gigs) para que el repartidor solo vea las que están dentro de su radio configurado."""
+    filtered = []
+    for stop in stops:
+        stop_point = Point(lat=stop.lat, lng=stop.lng)
+        if distance_in_km(origin, stop_point) <= max_radius_km:
+            filtered.append(stop)
+    return filtered
 
 
 def recommend(origin: Point, stops: list[Stop]) -> list[Stop]:
@@ -72,8 +96,20 @@ class ORS:
         return feature['geometry']['coordinates'], summary['distance'], summary['duration']
 
 
-async def calculate_route(request: RouteInput, provider: RouteProvider | None = None) -> Route:
-    ordered = recommend(request.origin, request.stops)
+async def calculate_route(request: RouteInput, provider: RouteProvider | None = None, max_radius_km: float | None = None) -> Route:
+    active_stops = request.stops
+    if max_radius_km is not None:
+        active_stops = filter_stops_by_radius(request.origin, active_stops, max_radius_km)
+        if not active_stops:
+            return Route(
+                status='unavailable',
+                message='No hay entregas disponibles dentro del radio en kilómetros seleccionado.',
+                ordered_stops=[],
+                provider=(provider.name if provider else 'OSRM'),
+                demo=request.demo
+            )
+
+    ordered = recommend(request.origin, active_stops)
     provider = provider or (ORS() if os.getenv('ROUTE_PROVIDER', 'osrm') == 'ors' else OSRM())
     try:
         coordinates, meters, seconds = await provider.calculate([request.origin, *ordered], request.mode)

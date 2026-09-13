@@ -7,7 +7,7 @@ import socket
 import aiohttp
 
 from ..models import AgentAssessment, Product, Risk, WebsiteProfile
-from .http import bounded_json
+from .http_client import bounded_json
 
 GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/'
 ALLOWED_MODELS = {'gemini-2.5-flash', 'gemini-2.5-flash-lite'}

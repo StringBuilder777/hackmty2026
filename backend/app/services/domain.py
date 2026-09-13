@@ -8,7 +8,7 @@ import aiohttp
 
 from ..models import DomainRegistration, Evidence
 from .fetch import PublicResolver
-from .http import bounded_json
+from .http_client import bounded_json
 
 RDAP_URL = 'https://rdap.org/domain/'
 

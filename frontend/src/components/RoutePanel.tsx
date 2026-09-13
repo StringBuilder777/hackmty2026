@@ -1,7 +1,8 @@
-import { Navigation, RotateCcw, Route as RouteIcon } from "lucide-react";
+import { Navigation, RotateCcw, Route as RouteIcon, Sliders } from "lucide-react";
 import type { Route, Stop } from "@/lib/types";
 import { dateLabel } from "@/lib/shopping";
 import { useLang } from "@/lib/i18n";
+
 export default function RoutePanel({
   route,
   stops,
@@ -9,6 +10,8 @@ export default function RoutePanel({
   loading,
   online,
   retry,
+  maxRadius,
+  setMaxRadius,
 }: {
   route: Route | null;
   stops: Stop[];
@@ -16,8 +19,11 @@ export default function RoutePanel({
   loading: boolean;
   online: boolean;
   retry: () => void;
+  maxRadius: number;
+  setMaxRadius: (val: number) => void;
 }) {
   const { t } = useLang();
+  
   return (
     <section className="route-panel" aria-live="polite">
       <div className="route-title">
@@ -27,6 +33,25 @@ export default function RoutePanel({
           <span>{t.routePanel.stopsCount(stops.length)}</span>
         )}
       </div>
+
+      {/* Control deslizante del radio personalizado estilo Uber / DHL */}
+      <div className="my-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex justify-between items-center mb-1 text-sm font-medium">
+          <span className="flex items-center gap-1">
+            <Sliders size={14} /> Radio de cobertura
+          </span>
+          <span className="text-blue-600 font-bold">{maxRadius} km</span>
+        </div>
+        <input 
+          type="range" 
+          min="1" 
+          max="30" 
+          value={maxRadius} 
+          onChange={(e) => setMaxRadius(Number(e.target.value))}
+          className="w-full accent-blue-600 cursor-pointer"
+        />
+      </div>
+
       {!online ? (
         <p>{t.routePanel.offline}</p>
       ) : !stops.length ? (
