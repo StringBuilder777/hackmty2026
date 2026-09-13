@@ -301,7 +301,7 @@ def test_catalog_never_infers_inventory_from_domain(tmp_path, monkeypatch):
 
 
 def test_provider_json_reads_all_chunks_and_caps_size():
-    from backend.app.services.http_client import bounded_json
+    from app.services.http_client import bounded_json
     class Content:
         async def iter_chunked(self, size):
             for chunk in [b'{"ok":', b'true}']: yield chunk

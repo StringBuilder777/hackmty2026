@@ -8,16 +8,17 @@ from __future__ import annotations
 import sqlite3
 import time
 import hashlib
+import math
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Iterable
 
-from ..models import AuditPeriod, AuditPreflight, Exhibit, Finding, LeadNotPursued, MoneyTrailStep, RunMetadata, Submission
-from .agent import forensic_narrative
+from ..models import AuditPeriod, AuditPreflight, CandidateFinding, Exhibit, Finding, LeadNotPursued, MoneyTrailStep, RunMetadata, Submission
+from .forensic_validation import publish_candidate, rejected_candidate_lead, validate_candidate
 
 AMOUNT_TABLES = {'invoices': 'total', 'bank_txns': 'amount', 'purchase_orders': 'amount', 'contracts': 'value'}
-RULESET_VERSION = '2026.09.12.2'
+RULESET_VERSION = '2026.09.12.3'
 ROUND_TRIP_MAX_DAYS = 14
 ROUND_TRIP_AMOUNT_VARIANCE = 0.02
 SPLIT_WINDOW_DAYS = 14
@@ -120,6 +121,7 @@ class ForensicAuditor:
             raise ValueError('estate_path debe apuntar a una base SQLite existente.')
         self.seed = seed
         self._index = 0
+        self._candidate_index = 0
 
     def _connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(f'file:{self.path}?mode=ro', uri=True)
@@ -170,14 +172,19 @@ class ForensicAuditor:
         if incomplete:
             raise ValueError(f"El estate no cumple las columnas requeridas en: {', '.join(sorted(incomplete))}.")
 
-    def _finding(self, scheme: str, entities: list[str], rule: str, confidence: str,
-                 exhibits: list[Exhibit], peso: float, trail: list[MoneyTrailStep] | None = None) -> Finding:
-        narrative = forensic_narrative(scheme, entities, rule, peso, exhibits)
-        return Finding(scheme_type=scheme, entities=entities, narrative=narrative,
-                       rule_broken=rule, peso_amount=peso, confidence=confidence,
-                       exhibits=exhibits, money_trail=trail or [])
+    def _candidate(self, scheme: str, entities: list[str], rule: str, confidence: str,
+                   exhibits: list[Exhibit], peso: float,
+                   trail: list[MoneyTrailStep] | None = None,
+                   facts: list[str] | None = None) -> CandidateFinding:
+        self._candidate_index += 1
+        return CandidateFinding(
+            candidate_id=f'CAND-{self._candidate_index:03d}', scheme_type=scheme,
+            entities=entities, rule_broken=rule, peso_amount=peso,
+            confidence=confidence, exhibits=exhibits, money_trail=trail or [],
+            detector_facts=facts or [],
+        )
 
-    def detect_phantom_vendor(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
+    def detect_phantom_vendor(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[CandidateFinding], list[LeadNotPursued]]:
         if not {'invoices', 'efos_list', 'vendors'} <= tables:
             return [], []
         rows = conn.execute('''SELECT i.*, e.status AS efos_status, v.legal_name
@@ -197,10 +204,10 @@ class ForensicAuditor:
             exhibits.append(self._exhibit('vendors', rfc, f"Registro maestro del proveedor {rfc} revisado contra la lista EFOS."))
             status = str(invoices[0]['efos_status']).strip().lower()
             confidence = 'proven' if status == 'definitivo' else 'probable'
-            findings.append(self._finding('phantom_vendor', [f'RFC:{rfc}'], 'CFF Art. 69-B: operaciones con EFOS.', confidence, exhibits, self._amount(invoices, 'total')))
+            findings.append(self._candidate('phantom_vendor', [f'RFC:{rfc}'], 'CFF Art. 69-B: operaciones con EFOS.', confidence, exhibits, self._amount(invoices, 'total')))
         return findings, []
 
-    def detect_kickback(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
+    def detect_kickback(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[CandidateFinding], list[LeadNotPursued]]:
         if not {'vendors', 'employees', 'invoices'} <= tables:
             return [], []
         rows = conn.execute('''SELECT v.rfc, v.bank_clabe, e.emp_id, e.name, i.uuid, i.total
@@ -217,17 +224,21 @@ class ForensicAuditor:
             exhibits = [self._exhibit('invoices', row['uuid'], f"Factura del proveedor {rfc} vinculada al flujo bajo revisión.") for row in invoices]
             exhibits.extend([self._exhibit('vendors', rfc, f'Proveedor {rfc} comparte CLABE con un empleado.'), self._exhibit('employees', emp, f'Empleado {emp} comparte la CLABE registrada con el proveedor.')])
             employee_entity = str(emp) if str(emp).startswith('EMP:') else f'EMP:{emp}'
-            findings.append(self._finding('kickback', [f'RFC:{rfc}', employee_entity], 'Políticas internas de compras: conflicto de interés y pago a tercero relacionado.', 'proven', exhibits, self._amount(invoices, 'total')))
+            findings.append(self._candidate('kickback', [f'RFC:{rfc}', employee_entity], 'Políticas internas de compras: conflicto de interés y pago a tercero relacionado.', 'proven', exhibits, self._amount(invoices, 'total')))
         return findings, []
 
-    def detect_round_tripping(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
+    def detect_round_tripping(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[CandidateFinding], list[LeadNotPursued]]:
         if 'bank_txns' not in tables:
             return [], []
-        txns = conn.execute('SELECT * FROM bank_txns WHERE amount > 0 ORDER BY date, txn_id').fetchall()
+        txns = [
+            row for row in conn.execute('SELECT * FROM bank_txns WHERE amount > 0 ORDER BY date, txn_id').fetchall()
+            if math.isfinite(self._number(row['amount']))
+        ]
         vendor_by_clabe = {
             str(row['bank_clabe']).strip(): str(row['rfc']).strip()
-            for row in conn.execute("SELECT rfc, bank_clabe FROM vendors WHERE trim(coalesce(bank_clabe, '')) <> ''")
+            for row in conn.execute("SELECT rfc, bank_clabe FROM vendors WHERE trim(coalesce(bank_clabe, '')) <> '' ORDER BY rfc")
         }
+        clabe_by_vendor = {rfc: clabe for clabe, rfc in vendor_by_clabe.items()}
         company_rfcs = {
             str(row['receiver_rfc']).strip()
             for row in conn.execute("SELECT DISTINCT receiver_rfc FROM invoices WHERE trim(coalesce(receiver_rfc, '')) <> ''")
@@ -259,11 +270,27 @@ class ForensicAuditor:
                         continue
                     seen.add(key)
                     exhibits = [self._exhibit('bank_txns', row['txn_id'], f"Transferencia {row['from_clabe']} a {row['to_clabe']}.") for row in rows]
+                    for rfc in dict.fromkeys(entity_rfcs):
+                        if rfc in clabe_by_vendor:
+                            exhibits.append(self._exhibit(
+                                'vendors', rfc,
+                                f'El registro maestro vincula RFC {rfc} con la CLABE {clabe_by_vendor[rfc]} citada en el ciclo.',
+                            ))
+                        elif rfc in company_rfcs:
+                            support = conn.execute(
+                                'SELECT * FROM invoices WHERE issuer_rfc=? OR receiver_rfc=? ORDER BY issue_date, uuid LIMIT 1',
+                                (rfc, rfc),
+                            ).fetchone()
+                            if support is not None:
+                                exhibits.append(self._exhibit(
+                                    'invoices', support['uuid'],
+                                    f'La factura identifica al RFC {rfc} dentro del estate auditado.',
+                                ))
                     trail = [MoneyTrailStep(**{'from': row['from_clabe'], 'to': row['to_clabe'], 'amount': self._number(row['amount']), 'date': row['date'], 'exhibit_id': exhibit.exhibit_id}) for row, exhibit in zip(rows, exhibits)]
-                    findings.append(self._finding('round_tripping', entities, 'Políticas internas de tesorería: flujo circular concentrado en 14 días y con importes equivalentes, sin justificación comercial.', 'probable', exhibits, self._amount(rows, 'amount'), trail))
+                    findings.append(self._candidate('round_tripping', entities, 'Políticas internas de tesorería: flujo circular concentrado en 14 días y con importes equivalentes, sin justificación comercial.', 'probable', exhibits, self._amount(rows, 'amount'), trail))
         return findings, []
 
-    def detect_threshold_splitting(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
+    def detect_threshold_splitting(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[CandidateFinding], list[LeadNotPursued]]:
         if 'invoices' not in tables:
             return [], []
         rows = conn.execute('''SELECT * FROM invoices WHERE total > 0 AND total < 50000 AND total >= 45000
@@ -288,30 +315,48 @@ class ForensicAuditor:
                     leads.append(LeadNotPursued(entity=f'RFC:{rfc}', signal='threshold_splitting', reason=f"Se revisaron {len(invoices)} factura(s) de $45,000 a menos de $50,000; no hay tres operaciones dentro de una ventana de {SPLIT_WINDOW_DAYS} días.", tool_calls_made=['SQL invoices by issuer, amount and issue_date'], closed_by='investigator'))
                 continue
             exhibits = [self._exhibit('invoices', row['uuid'], f"Factura por ${self._number(row['total']):,.2f}, inmediatamente debajo del umbral de $50,000 y dentro de una ventana de {SPLIT_WINDOW_DAYS} días.") for row in selected]
-            findings.append(self._finding('threshold_splitting', [f'RFC:{rfc}'], 'Políticas internas de compras: prohibición de fraccionar adquisiciones para evadir el umbral de autorización.', 'probable', exhibits, self._amount(selected, 'total')))
+            findings.append(self._candidate('threshold_splitting', [f'RFC:{rfc}'], 'Políticas internas de compras: prohibición de fraccionar adquisiciones para evadir el umbral de autorización.', 'probable', exhibits, self._amount(selected, 'total')))
         return findings, leads
 
-    def detect_revenue_inflation(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
+    def detect_revenue_inflation(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[CandidateFinding], list[LeadNotPursued]]:
         if not {'invoices', 'ledger'} <= tables:
             return [], []
         invoices = conn.execute("SELECT * FROM invoices WHERE lower(coalesce(status,'')) = 'cancelado' ORDER BY issuer_rfc, issue_date, uuid").fetchall()
         findings, leads = [], []
         for invoice in invoices:
             ledger = conn.execute('SELECT * FROM ledger WHERE invoice_uuid=? ORDER BY entry_id', (invoice['uuid'],)).fetchall()
-            revenue_rows = [row for row in ledger if self._number(row['credit']) > 0 and (
+            revenue_rows = [row for row in ledger if (
                 str(row['account_code'] or '').startswith('4') or
                 any(token in str(row['account_name'] or '').lower() + ' ' + str(row['description'] or '').lower() for token in ('ingreso', 'revenue', 'venta'))
             )]
             unreversed_revenue = round(sum(self._number(row['credit']) - self._number(row['debit']) for row in revenue_rows), 2)
-            if self._number(invoice['total']) <= 0 or len(ledger) < 2 or not revenue_rows or unreversed_revenue <= 0:
+            original_credits = [row for row in revenue_rows if self._number(row['credit']) > 0]
+            reversal_rows = [row for row in revenue_rows if self._number(row['debit']) > 0]
+            if self._number(invoice['total']) <= 0 or len(ledger) < 2 or not original_credits or unreversed_revenue <= 0:
                 leads.append(LeadNotPursued(entity=f'RFC:{invoice["issuer_rfc"]}', signal='revenue_inflation', reason=f"La factura cancelada {invoice['uuid']} fue revisada, pero no conserva al menos un crédito positivo de ingresos sin reversa verificable.", tool_calls_made=['SQL invoices status', 'SQL ledger by invoice_uuid'], closed_by='challenger'))
                 continue
-            support = next((row for row in ledger if row['entry_id'] != revenue_rows[0]['entry_id']), revenue_rows[0])
-            exhibits = [self._exhibit('invoices', invoice['uuid'], 'Factura cancelada que fue registrada como ingreso.'), self._exhibit('ledger', revenue_rows[0]['entry_id'], f"Crédito de ingreso asociado a la factura {invoice['uuid']} que permanece sin reversa."), self._exhibit('ledger', support['entry_id'], f"Asiento contable asociado a la factura {invoice['uuid']}.")]
+            credit_row = original_credits[0]
+            support = reversal_rows[0] if reversal_rows else next(
+                (row for row in ledger if row['entry_id'] != credit_row['entry_id']), credit_row,
+            )
+            exhibits = [
+                self._exhibit('invoices', invoice['uuid'], 'Factura cancelada que fue registrada como ingreso.'),
+                self._exhibit('ledger', credit_row['entry_id'], f"Crédito de ingreso asociado a la factura {invoice['uuid']} que permanece sin reversa completa."),
+                self._exhibit(
+                    'ledger', support['entry_id'],
+                    (f"Reversa parcial asociada a la factura {invoice['uuid']}; queda un saldo de ingreso de ${unreversed_revenue:,.2f}."
+                     if reversal_rows else f"Asiento de contrapartida asociado a la factura {invoice['uuid']} sin reversa de ingresos."),
+                ),
+            ]
             # The exposed amount is the cancelled CFDI total.  The revenue entry
             # establishes that recognition persisted; the invoice exhibit makes
             # the reported peso independently reconcilable by the validator.
-            findings.append(self._finding('revenue_inflation', [f'RFC:{invoice["issuer_rfc"]}'], 'NIF C-3 y políticas de cierre contable: ingresos cancelados no deben mantenerse reconocidos.', 'proven', exhibits, round(self._number(invoice['total']), 2)))
+            findings.append(self._candidate(
+                'revenue_inflation', [f'RFC:{invoice["issuer_rfc"]}'],
+                'NIF C-3 y políticas de cierre contable: ingresos cancelados no deben mantenerse reconocidos.',
+                'proven', exhibits, round(self._number(invoice['total']), 2),
+                facts=[f'ingreso_neto_no_revertido={unreversed_revenue:.2f}'],
+            ))
         return findings, leads
 
     def run(self) -> Submission:
@@ -319,12 +364,29 @@ class ForensicAuditor:
         with self._connection() as conn:
             tables = self._tables(conn)
             self._validate_estate(conn, tables)
+            candidates: list[CandidateFinding] = []
             findings: list[Finding] = []
             leads: list[LeadNotPursued] = []
             for detector in (self.detect_phantom_vendor, self.detect_kickback, self.detect_round_tripping, self.detect_threshold_splitting, self.detect_revenue_inflation):
                 detected, closed = detector(conn, tables)
-                findings.extend(detected)
+                candidates.extend(detected)
                 leads.extend(closed)
+            for candidate in candidates:
+                report = validate_candidate(conn, candidate)
+                if report.passed:
+                    findings.append(publish_candidate(candidate, report))
+                else:
+                    leads.append(rejected_candidate_lead(candidate, report))
+            scheme_order = {
+                name: index for index, name in enumerate(
+                    ('phantom_vendor', 'kickback', 'round_tripping', 'threshold_splitting', 'revenue_inflation')
+                )
+            }
+            findings.sort(key=lambda finding: (
+                scheme_order[finding.scheme_type], tuple(finding.entities),
+                tuple((exhibit.source_table, exhibit.record_id) for exhibit in finding.exhibits),
+            ))
+            leads.sort(key=lambda lead: (lead.signal, lead.entity, lead.reason))
         return Submission(seed=self.seed, findings=findings, leads_not_pursued=leads,
                           run_metadata=RunMetadata(llm_calls=0, mxn_cost=0.0,
                           wall_clock_seconds=round(time.perf_counter() - started, 6), cost_by_role={}, deterministic=True))

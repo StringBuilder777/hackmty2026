@@ -59,6 +59,34 @@ class Finding(Model):
         return value
 
 
+class CandidateFinding(Model):
+    """Internal detector output; it is never serialized in a Submission."""
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=True)
+
+    candidate_id: str = Field(min_length=1)
+    scheme_type: ForensicScheme
+    entities: list[str]
+    rule_broken: str = Field(min_length=1, max_length=400)
+    peso_amount: float
+    confidence: Literal['proven', 'probable']
+    money_trail: list[MoneyTrailStep] = Field(default_factory=list)
+    exhibits: list[Exhibit] = Field(default_factory=list)
+    detector_facts: list[str] = Field(default_factory=list)
+
+
+class CheckResult(Model):
+    code: str = Field(min_length=1)
+    passed: bool
+    detail: str = Field(min_length=1)
+
+
+class ValidationReport(Model):
+    candidate_id: str = Field(min_length=1)
+    passed: bool
+    checks: list[CheckResult]
+    action: Literal['publish', 'close_as_lead']
+
+
 class LeadNotPursued(Model):
     entity: str = Field(min_length=1)
     signal: str = Field(min_length=1)
