@@ -58,15 +58,22 @@ cd backend
 .venv/bin/python /Users/stringbuilder/Downloads/student-materials/forensic-auditor/validate_format.py \
   --submission /tmp/forensic-demo-submission.json --estate data/forensic-demo.db
 .venv/bin/python -m evaluation.run_benchmark
+.venv/bin/python scripts/export_forensic_inputs.py data/forensic-demo.db --output ../deliverables/forensic-inputs
 .venv/bin/python scripts/run_submission.py data/forensic-demo.db --seed 2026 --output /tmp/forensic-package \
   --validator /Users/stringbuilder/Downloads/student-materials/forensic-auditor/validate_format.py
 ```
 
 En la interfaz, abrir **Auditoría** y seleccionar `backend/data/forensic-demo.db`, o pulsar **Probar caso demostrativo (5 esquemas)**. Todos sus datos son ficticios y se usan únicamente para demostración. El benchmark genera cinco estates separados con señales positivas y señuelos; deja sus métricas reproducibles en `backend/evaluation/results.csv`. Sus resultados validan esta batería local, no predicen la calificación sobre los estates ocultos de los jueces.
 
-Antes de ejecutar, **Verificar dataset antes de auditar** genera un preflight local: hash SHA-256, tamaño, conteos de tablas, periodo y advertencias de calidad. `run_submission.py` también lo incorpora al `manifest.json`, junto con seed, versión de reglas, métricas y resultado del validador cuando se proporciona `--validator`. Por seguridad no sobrescribe un paquete existente salvo con `--overwrite`.
+Para presentar sin ejecutar primero el sistema, el repositorio conserva un paquete ya generado en [`deliverables/forensic-demo`](deliverables/forensic-demo): contiene el JSON oficial, Case File, Results, manifest y la salida aprobatoria del validador. La demostración en vivo debe regenerarlo con `run_submission.py` para probar que no es un archivo preparado manualmente.
 
-El plan para completar el validador determinista, incorporar un investigador/challenger LLM sin autoridad factual, medir costos y demostrar replay offline está en [`docs/forensic-llm-validation-plan.md`](docs/forensic-llm-validation-plan.md).
+La carga desde navegador admite: un `.db`/`.sqlite`; un ZIP que contenga exactamente una base SQLite; las ocho tablas CSV oficiales seleccionadas al mismo tiempo; o un ZIP con esos ocho CSV. Los CSV deben llamarse `vendors.csv`, `invoices.csv`, `ledger.csv`, `bank_txns.csv`, `purchase_orders.csv`, `contracts.csv`, `employees.csv` y `efos_list.csv`, usar UTF-8 y conservar las columnas de `estate_schema.sql`. Hay ejemplos listos en [`deliverables/forensic-inputs`](deliverables/forensic-inputs).
+
+Antes de ejecutar, **Verificar dataset antes de auditar** genera un preflight local: hash SHA-256, tamaño, conteos de tablas, periodo, tablas vacías, fechas e importes inválidos, posibles duplicados y relaciones huérfanas. `run_submission.py` también lo incorpora al `manifest.json`, junto con seed, versión de reglas, métricas y resultado del validador cuando se proporciona `--validator`. El paquete incluye `submission.json`, `case_file.md`, `results.csv`, `manifest.json` y la salida del validador oficial. Por seguridad no sobrescribe un paquete existente salvo con `--overwrite`.
+
+La implementación actual funciona sin LLM y sin red. Cada detector genera un candidato interno; antes de publicar una acusación, un hard validator independiente vuelve a comprobar registros, entidades, regla, confianza, importes, conciliación por tabla, money trail e invariantes propios del esquema. Un rechazo se conserva como `lead_not_pursued` con la razón y los checks ejecutados. El diseño opcional de LLM permanece documentado en [`docs/forensic-llm-validation-plan.md`](docs/forensic-llm-validation-plan.md), pero no forma parte de la ruta evaluada ni tiene autoridad factual.
+
+Con el mismo estate y seed, los hallazgos, leads, importes, exhibits y narrativa son deterministas. `wall_clock_seconds` es la medición real de cada ejecución y, por definición, puede variar; para un replay byte a byte debe conservarse el paquete generado en vez de volver a medir el proceso.
 
 ## Qué funciona con datos reales
 

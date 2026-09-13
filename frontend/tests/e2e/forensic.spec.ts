@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import path from "node:path";
 
 const submission = {
   seed: 2026,
@@ -18,6 +19,17 @@ const submission = {
       { exhibit_id: "EX-001", source_table: "bank_txns", record_id: "TX-1", note: "Salida." },
       { exhibit_id: "EX-002", source_table: "bank_txns", record_id: "TX-2", note: "Intermediación." },
       { exhibit_id: "EX-003", source_table: "bank_txns", record_id: "TX-3", note: "Retorno." },
+    ],
+  }, {
+    scheme_type: "phantom_vendor",
+    entities: ["RFC:EFOS211107F05"],
+    narrative: "Proveedor listado como EFOS con facturas emitidas en el periodo auditado.",
+    rule_broken: "CFF Art. 69-B: operaciones con EFOS.",
+    peso_amount: 580000,
+    confidence: "probable",
+    money_trail: [],
+    exhibits: [
+      { exhibit_id: "EX-004", source_table: "efos_list", record_id: "EFOS211107F05", note: "RFC listado como presunto." },
     ],
   }],
   leads_not_pursued: [{
@@ -60,7 +72,15 @@ test("forensic: demo, evidence and exports render from a bounded audit response"
 
   await expect(page.getByText("Hallazgos detectados")).toBeVisible();
   await expect(page.getByText("RFC:VENDA · RFC:VENDB")).toBeVisible();
+  const roundTrippingFinding = page.locator(".finding-card").filter({ hasText: "RFC:VENDA · RFC:VENDB" });
+  await expect(roundTrippingFinding.getByRole("button", { name: "Ver detalle" })).toBeVisible();
+  await roundTrippingFinding.getByRole("button", { name: "Ver detalle" }).click();
   await expect(page.getByText("Monto reclamado conciliado internamente:")).toBeVisible();
+  await page.getByRole("button", { name: /Phantom vendor/ }).click();
+  await expect(page.locator(".finding-card")).toHaveCount(1);
+  await expect(page.getByText("RFC:EFOS211107F05")).toBeVisible();
+  await page.getByRole("button", { name: "Ver detalle" }).click();
+  await expect(page.getByText("Proveedor listado como EFOS con facturas emitidas en el periodo auditado.")).toBeVisible();
   await expect(page.getByText("1 cerrados")).toBeVisible();
   const leadSummary = page.locator("details.lead-accordion-item > summary");
   await leadSummary.focus();
@@ -74,4 +94,26 @@ test("forensic: demo, evidence and exports render from a bounded audit response"
   await page.getByRole("button", { name: /Descargar Case File/ }).click();
   expect((await caseDownload).suggestedFilename()).toBe("case-file.md");
   expect(errors).toEqual([]);
+});
+
+test("forensic: selects the eight official CSV files as one estate", async ({ page }) => {
+  let uploadedFiles = 0;
+  await page.route("**/audit/preflight/upload", async (route) => {
+    const body = route.request().postDataJSON() as { estate_files?: unknown[] };
+    uploadedFiles = body.estate_files?.length ?? 0;
+    await route.fulfill({ json: { ...preflight, estate_filename: "CSV bundle (8 tablas)" } });
+  });
+  await page.goto("/#auditoria");
+  const csvDirectory = path.resolve("../deliverables/forensic-inputs/csv");
+  const names = [
+    "vendors.csv", "invoices.csv", "ledger.csv", "bank_txns.csv",
+    "purchase_orders.csv", "contracts.csv", "employees.csv", "efos_list.csv",
+  ];
+
+  await page.getByLabel("Dataset DB, ZIP o CSV").setInputFiles(names.map((name) => path.join(csvDirectory, name)));
+  await expect(page.getByText("8 archivos CSV")).toBeVisible();
+  await page.getByRole("button", { name: "Verificar dataset antes de auditar" }).click();
+
+  await expect(page.getByText("Dataset verificado: CSV bundle (8 tablas)")).toBeVisible();
+  expect(uploadedFiles).toBe(8);
 });

@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from app.models import CandidateFinding, Exhibit
-from app.services.forensic import create_demo_estate, run_forensic_audit
+from app.services.forensic import create_demo_estate, inspect_forensic_estate, render_case_file, run_forensic_audit
 from app.services.forensic_validation import publish_candidate, rejected_candidate_lead, validate_candidate
 
 
@@ -93,3 +93,33 @@ def test_round_tripping_exhibits_the_rfc_to_clabe_relationship(tmp_path):
     }
     assert vendor_records == {'VENDORA0101', 'VENDORB0101'}
     assert all(any(entity.removeprefix('RFC:') == record for record in vendor_records) for entity in finding.entities)
+
+
+def test_case_file_has_one_diagram_per_finding_and_deduplicated_exposure(tmp_path):
+    path = tmp_path / 'estate.db'
+    create_demo_estate(str(path))
+    submission = run_forensic_audit(str(path), 2026)
+
+    case_file = render_case_file(submission, str(path))
+
+    assert case_file.count('```mermaid') == len(submission.findings)
+    assert 'Empresa auditada: COMPANY010101AAA.' in case_file
+    assert '| Total exposure | $678,160.00 MXN |' in case_file
+
+
+def test_preflight_reports_empty_tables_invalid_dates_and_orphans(tmp_path):
+    path = tmp_path / 'estate.db'
+    create_demo_estate(str(path))
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE bank_txns SET date='not-a-date' WHERE txn_id='CYCLE-001'")
+    conn.execute("INSERT INTO ledger VALUES (99,'bad-date','4000','Ingresos',0,1,'Huérfano','MISSING','CC','Ana')")
+    conn.commit()
+    conn.close()
+
+    preflight = inspect_forensic_estate(str(path))
+    warnings = '\n'.join(preflight.quality_warnings)
+
+    assert 'purchase_orders: tabla vacía' in warnings
+    assert 'bank_txns.date: 1 fecha(s) inválida(s)' in warnings
+    assert 'ledger.date: 1 fecha(s) inválida(s)' in warnings
+    assert 'ledger: 1 asiento(s) con invoice_uuid huérfano' in warnings

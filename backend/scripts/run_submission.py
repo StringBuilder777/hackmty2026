@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -24,7 +25,7 @@ def sha256(path: Path) -> str:
 
 
 def prepare_output(path: Path, overwrite: bool) -> None:
-    artifacts = ('submission.json', 'case_file.md', 'manifest.json', 'validator-output.txt')
+    artifacts = ('submission.json', 'case_file.md', 'manifest.json', 'results.csv', 'validator-output.txt')
     if path.exists() and not path.is_dir():
         raise ValueError('--output debe ser un directorio.')
     if path.exists() and any((path / name).exists() for name in artifacts) and not overwrite:
@@ -55,6 +56,9 @@ def main() -> None:
     case_file_path = output / 'case_file.md'
     submission_path.write_text(submission.model_dump_json(by_alias=True, indent=2), encoding='utf-8')
     case_file_path.write_text(render_case_file(submission, str(estate)), encoding='utf-8')
+    results_source = ROOT / 'evaluation' / 'results.csv'
+    if results_source.is_file():
+        shutil.copyfile(results_source, output / 'results.csv')
 
     validation = {'executed': False, 'passed': None, 'command': None}
     if args.validator:
@@ -77,6 +81,7 @@ def main() -> None:
         'lead_count': len(submission.leads_not_pursued),
         'preflight': preflight.model_dump(),
         'run_metadata': submission.run_metadata.model_dump(),
+        'results_table': 'results.csv' if results_source.is_file() else None,
         'official_format_validation': validation,
     }
     (output / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

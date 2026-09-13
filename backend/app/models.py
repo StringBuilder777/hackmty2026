@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from typing import Any, Literal, Self
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 def now() -> str:
@@ -115,10 +115,23 @@ class AuditRunInput(Model):
     seed: int
 
 
+class AuditUploadFile(Model):
+    filename: str = Field(min_length=1, max_length=255)
+    content_base64: str = Field(min_length=1, max_length=24 * 1024 * 1024)
+
+
 class AuditUploadInput(Model):
-    """Base64 is used instead of multipart to keep one explicit API contract."""
-    estate_base64: str = Field(min_length=24, max_length=24 * 1024 * 1024)
+    """Backward-compatible upload contract for DB, ZIP, or a complete CSV set."""
+    estate_base64: str | None = Field(default=None, min_length=24, max_length=24 * 1024 * 1024)
+    estate_filename: str = Field(default='estate.db', min_length=1, max_length=255)
+    estate_files: list[AuditUploadFile] = Field(default_factory=list, max_length=8)
     seed: int
+
+    @model_validator(mode='after')
+    def has_one_upload_shape(self) -> Self:
+        if bool(self.estate_base64) == bool(self.estate_files):
+            raise ValueError('Envía estate_base64 o estate_files, pero no ambos.')
+        return self
 
 
 class AuditDemoInput(Model):

@@ -1,0 +1,12 @@
+
+======================================================================
+  FORENSIC AUDITOR - SUBMISSION FORMAT CHECK
+======================================================================
+  findings: 5   leads_not_pursued: 1   estate check: yes
+----------------------------------------------------------------------
+  PASS  submission conforms to the required format
+
+  This checks FORMAT ONLY. It does not tell you whether your findings are
+  correct, and it cannot score recall or false accusations - that requires
+  ground truth for the estate, which you generate yourself.
+

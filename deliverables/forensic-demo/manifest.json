@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "ruleset_version": "2026.09.12.3",
+  "estate_filename": "forensic-demo.db",
+  "estate_sha256": "51b89f284dcf9c8aede072b060d7fc18e72d68ed972b2cefcaa2a848d385473e",
+  "estate_bytes": 65536,
+  "seed": 2026,
+  "finding_count": 5,
+  "lead_count": 1,
+  "preflight": {
+    "estate_filename": "forensic-demo.db",
+    "estate_sha256": "51b89f284dcf9c8aede072b060d7fc18e72d68ed972b2cefcaa2a848d385473e",
+    "estate_bytes": 65536,
+    "tables": {
+      "bank_txns": 3,
+      "contracts": 0,
+      "efos_list": 1,
+      "employees": 1,
+      "invoices": 7,
+      "ledger": 2,
+      "purchase_orders": 0,
+      "vendors": 5
+    },
+    "period": {
+      "from_date": "2025-01-02",
+      "to_date": "2026-01-31"
+    },
+    "quality_warnings": [
+      "contracts: tabla vacía; los detectores relacionados no tendrán evidencia.",
+      "purchase_orders: tabla vacía; los detectores relacionados no tendrán evidencia."
+    ],
+    "ready": true
+  },
+  "run_metadata": {
+    "llm_calls": 0,
+    "mxn_cost": 0.0,
+    "wall_clock_seconds": 0.00186,
+    "cost_by_role": {},
+    "deterministic": true
+  },
+  "results_table": "results.csv",
+  "official_format_validation": {
+    "executed": true,
+    "passed": true,
+    "command": [
+      "/Users/stringbuilder/hackmty2026/backend/.venv/bin/python",
+      "/Users/stringbuilder/Downloads/student-materials/forensic-auditor/validate_format.py",
+      "--submission",
+      "/Users/stringbuilder/hackmty2026/deliverables/forensic-demo/submission.json",
+      "--estate",
+      "/Users/stringbuilder/hackmty2026/backend/data/forensic-demo.db"
+    ]
+  }
+}

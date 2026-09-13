@@ -83,21 +83,59 @@ def inspect_forensic_estate(estate_path: str) -> AuditPreflight:
         tables = auditor._tables(conn)
         auditor._validate_estate(conn, tables)
         counts = {table: int(conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]) for table in sorted(REQUIRED_COLUMNS)}
-        dates = [auditor._date(row[0]) for row in conn.execute('SELECT issue_date FROM invoices WHERE issue_date IS NOT NULL')]
+        dates = [auditor._date(row[0]) for row in conn.execute('SELECT issue_date FROM invoices')]
         valid_dates = sorted(value for value in dates if value is not None)
         invalid_dates = sum(value is None for value in dates)
         if invalid_dates:
             warnings.append(f'invoices.issue_date: {invalid_dates} fecha(s) inválida(s) se excluirán de reglas temporales.')
-        for table, column in (('invoices', 'total'), ('bank_txns', 'amount'), ('ledger', 'credit')):
-            invalid = int(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {column} IS NULL OR typeof({column}) NOT IN ('integer', 'real')").fetchone()[0])
+        for table, column in (
+            ('invoices', 'total'), ('bank_txns', 'amount'), ('purchase_orders', 'amount'),
+            ('contracts', 'value'), ('ledger', 'debit'), ('ledger', 'credit'),
+        ):
+            raw_values = [row[0] for row in conn.execute(f'SELECT {column} FROM {table}')]
+            invalid = sum(
+                not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) < 0
+                for value in raw_values
+            )
             if invalid:
-                warnings.append(f'{table}.{column}: {invalid} valor(es) no numérico(s) o nulo(s).')
+                warnings.append(f'{table}.{column}: {invalid} valor(es) nulo(s), no numérico(s) o negativo(s).')
+        for table, column in (('bank_txns', 'date'), ('ledger', 'date')):
+            values = [auditor._date(row[0]) for row in conn.execute(f'SELECT {column} FROM {table}')]
+            invalid = sum(value is None for value in values)
+            if invalid:
+                warnings.append(f'{table}.{column}: {invalid} fecha(s) inválida(s) se excluirán de reglas temporales.')
+        for table, count in counts.items():
+            if count == 0:
+                warnings.append(f'{table}: tabla vacía; los detectores relacionados no tendrán evidencia.')
         duplicate_invoices = int(conn.execute('''SELECT COUNT(*) FROM (
             SELECT issuer_rfc, receiver_rfc, issue_date, total, concepto_text
             FROM invoices GROUP BY issuer_rfc, receiver_rfc, issue_date, total, concepto_text HAVING COUNT(*) > 1
         )''').fetchone()[0])
         if duplicate_invoices:
             warnings.append(f'invoices: {duplicate_invoices} grupo(s) de factura potencialmente duplicado(s).')
+        duplicate_bank = int(conn.execute('''SELECT COUNT(*) FROM (
+            SELECT date, from_clabe, to_clabe, amount, reference
+            FROM bank_txns GROUP BY date, from_clabe, to_clabe, amount, reference HAVING COUNT(*) > 1
+        )''').fetchone()[0])
+        if duplicate_bank:
+            warnings.append(f'bank_txns: {duplicate_bank} grupo(s) de transferencia potencialmente duplicado(s).')
+        principal = conn.execute('''SELECT receiver_rfc FROM invoices
+            WHERE trim(coalesce(receiver_rfc,''))<>'' GROUP BY receiver_rfc
+            ORDER BY COUNT(*) DESC, receiver_rfc LIMIT 1''').fetchone()
+        orphan_invoices = int(conn.execute('''SELECT COUNT(*) FROM invoices i
+            LEFT JOIN vendors v ON v.rfc=i.issuer_rfc
+            WHERE i.receiver_rfc=? AND v.rfc IS NULL''', (principal[0] if principal else '',)).fetchone()[0])
+        orphan_ledger = int(conn.execute('''SELECT COUNT(*) FROM ledger l LEFT JOIN invoices i
+            ON i.uuid=l.invoice_uuid WHERE l.invoice_uuid IS NOT NULL AND trim(l.invoice_uuid)<>'' AND i.uuid IS NULL''').fetchone()[0])
+        orphan_procurement = int(conn.execute('''SELECT
+            (SELECT COUNT(*) FROM purchase_orders p LEFT JOIN vendors v ON v.rfc=p.vendor_rfc WHERE v.rfc IS NULL) +
+            (SELECT COUNT(*) FROM contracts c LEFT JOIN vendors v ON v.rfc=c.vendor_rfc WHERE v.rfc IS NULL)''').fetchone()[0])
+        if orphan_invoices:
+            warnings.append(f'invoices: {orphan_invoices} emisor(es) sin registro maestro de proveedor.')
+        if orphan_ledger:
+            warnings.append(f'ledger: {orphan_ledger} asiento(s) con invoice_uuid huérfano.')
+        if orphan_procurement:
+            warnings.append(f'procurement: {orphan_procurement} orden(es) o contrato(s) con proveedor huérfano.')
         if not valid_dates:
             warnings.append('invoices: no hay fechas ISO válidas; reglas temporales quedarán limitadas.')
     return AuditPreflight(
@@ -397,35 +435,68 @@ def run_forensic_audit(estate_path: str, seed: int) -> Submission:
 
 
 def _review(finding: Finding) -> str:
-    """A deterministic challenger checks contract-level weaknesses, not facts."""
+    """State the strongest deterministic counter-hypothesis and why it failed."""
     monetary = [e for e in finding.exhibits if e.source_table in AMOUNT_TABLES]
     if len(finding.exhibits) < 3 or not monetary:
-        return 'La revisión adversarial rechazó el caso por falta de evidencia o conciliación.'
-    return f'La revisión adversarial intentó descartar el hallazgo por evidencia insuficiente; sobrevivió porque conserva {len(finding.exhibits)} exhibits, incluyendo {len(monetary)} registro(s) monetario(s), y una conciliación verificable.'
+        return 'El hard validator habría cerrado este candidato por evidencia o conciliación insuficiente.'
+    challenges = {
+        'phantom_vendor': 'Objeción: coincidir con una lista no bastaría si la factura perteneciera a otro RFC o el estatus no fuera aplicable. Sobrevivió porque el emisor, la factura, el maestro de proveedor y el registro EFOS definitivo/presunto enlazan al mismo RFC.',
+        'kickback': 'Objeción: usar el mismo banco no implica conflicto. Sobrevivió porque no se comparó la institución, sino la CLABE completa, no vacía y exactamente igual entre el proveedor y el empleado exhibidos.',
+        'round_tripping': 'Objeción: tres transferencias parecidas podrían ser operaciones independientes. Sobrevivió como probable —no proven— porque los pasos conectan y cierran el ciclo, están ordenados, ocurren dentro de 14 días y sus importes varían como máximo 2%.',
+        'threshold_splitting': 'Objeción: una factura bajo el umbral puede ser ordinaria. Sobrevivió como probable porque el mismo emisor acumuló al menos tres facturas de $45,000 a menos de $50,000 dentro de 14 días.',
+        'revenue_inflation': 'Objeción: una factura cancelada pudo haberse revertido correctamente. Sobrevivió porque el hard validator volvió a calcular los asientos de ingreso y confirmó que permanece un saldo neto positivo no revertido.',
+    }
+    gate = f' El hard validator además confirmó existencia, unicidad, entidades, importes y conciliación en {len(finding.exhibits)} exhibits ({len(monetary)} monetario(s)).'
+    return challenges[finding.scheme_type] + gate
+
+
+def _monetary_evidence(finding: Finding, estate_path: str | None) -> dict[str, list[tuple[str, str, float]]]:
+    if not estate_path:
+        return {}
+    grouped: dict[str, list[tuple[str, str, float]]] = defaultdict(list)
+    ids = {'invoices': 'uuid', 'bank_txns': 'txn_id', 'purchase_orders': 'po_id', 'contracts': 'contract_id'}
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(f'file:{Path(estate_path).resolve()}?mode=ro', uri=True)
+        for exhibit in finding.exhibits:
+            column = AMOUNT_TABLES.get(exhibit.source_table)
+            if not column:
+                continue
+            row = conn.execute(
+                f'SELECT {column} FROM {exhibit.source_table} WHERE {ids[exhibit.source_table]}=?',
+                (exhibit.record_id,),
+            ).fetchone()
+            if row is not None and math.isfinite(float(row[0] or 0)):
+                grouped[exhibit.source_table].append((exhibit.exhibit_id, exhibit.record_id, float(row[0] or 0)))
+    except (sqlite3.Error, TypeError, ValueError):
+        return {}
+    finally:
+        if conn is not None:
+            conn.close()
+    return grouped
 
 
 def _reconciliation_expression(finding: Finding, estate_path: str | None) -> str:
     if not estate_path:
         return f'${finding.peso_amount:,.2f} (verificado durante la ejecución)'
-    try:
-        conn = sqlite3.connect(f'file:{Path(estate_path).resolve()}?mode=ro', uri=True)
-        conn.row_factory = sqlite3.Row
-        grouped: dict[str, list[tuple[str, float]]] = defaultdict(list)
-        ids = {'invoices': 'uuid', 'bank_txns': 'txn_id', 'purchase_orders': 'po_id', 'contracts': 'contract_id'}
-        for exhibit in finding.exhibits:
-            column = AMOUNT_TABLES.get(exhibit.source_table)
-            if not column:
-                continue
-            row = conn.execute(f'SELECT {column} FROM {exhibit.source_table} WHERE {ids[exhibit.source_table]}=?', (exhibit.record_id,)).fetchone()
-            if row is not None:
-                grouped[exhibit.source_table].append((exhibit.exhibit_id, float(row[column] or 0)))
-        conn.close()
-        if not grouped:
-            return f'${finding.peso_amount:,.2f} (sin exhibit monetario recuperable)'
-        _, values = min(grouped.items(), key=lambda item: abs(finding.peso_amount - sum(value for _, value in item[1])))
-        return ' + '.join(f'{exhibit_id} (${amount:,.2f})' for exhibit_id, amount in values) + f' = ${sum(amount for _, amount in values):,.2f}'
-    except sqlite3.Error:
+    grouped = _monetary_evidence(finding, estate_path)
+    if not grouped:
         return f'${finding.peso_amount:,.2f} (verificado durante la ejecución)'
+    _, values = min(grouped.items(), key=lambda item: abs(finding.peso_amount - sum(value for _, _, value in item[1])))
+    return ' + '.join(f'{exhibit_id} (${amount:,.2f})' for exhibit_id, _, amount in values) + f' = ${sum(amount for _, _, amount in values):,.2f}'
+
+
+def _unique_exposure(findings: list[Finding], estate_path: str | None) -> float:
+    """Deduplicate overlapping monetary records across published findings."""
+    unique: dict[tuple[str, str], float] = {}
+    for finding in findings:
+        grouped = _monetary_evidence(finding, estate_path)
+        if not grouped:
+            continue
+        table, values = min(grouped.items(), key=lambda item: abs(finding.peso_amount - sum(v for _, _, v in item[1])))
+        for _, record_id, amount in values:
+            unique[(table, record_id)] = amount
+    return round(sum(unique.values()), 2) if unique else round(sum(f.peso_amount for f in findings), 2)
 
 
 def _case_context(estate_path: str | None) -> tuple[str, str]:
@@ -433,33 +504,39 @@ def _case_context(estate_path: str | None) -> tuple[str, str]:
         return 'No disponible', 'No disponible'
     try:
         conn = sqlite3.connect(f'file:{Path(estate_path).resolve()}?mode=ro', uri=True)
-        row = conn.execute('SELECT receiver_rfc, min(issue_date), max(issue_date) FROM invoices').fetchone()
+        company_row = conn.execute('''SELECT receiver_rfc, COUNT(*) AS uses FROM invoices
+            WHERE trim(coalesce(receiver_rfc,''))<>'' GROUP BY receiver_rfc
+            ORDER BY uses DESC, receiver_rfc LIMIT 1''').fetchone()
+        dates = [value[0] for value in conn.execute("SELECT issue_date FROM invoices WHERE date(issue_date) IS NOT NULL ORDER BY issue_date")]
         conn.close()
-        if row is None:
+        if company_row is None:
             return 'No disponible', 'No disponible'
-        return str(row[0] or 'No disponible'), f'{row[1] or "No disponible"} a {row[2] or "No disponible"}'
+        period = f'{dates[0]} a {dates[-1]}' if dates else 'No disponible'
+        return str(company_row[0] or 'No disponible'), period
     except sqlite3.Error:
         return 'No disponible', 'No disponible'
 
 
 def render_case_file(submission: Submission, estate_path: str | None = None) -> str:
     proven = sum(f.confidence == 'proven' for f in submission.findings)
-    exposure = sum(f.peso_amount for f in submission.findings)
+    exposure = _unique_exposure(submission.findings, estate_path)
     company, period = _case_context(estate_path)
     lines = ['# Case File — Forensic Auditor', '', '## 1. Header', f'Empresa auditada: {company}. Periodo auditado: {period}. Estate seed: {submission.seed}. LLM calls: {submission.run_metadata.llm_calls}; MXN cost: ${submission.run_metadata.mxn_cost:,.2f}; wall-clock: {submission.run_metadata.wall_clock_seconds:.3f}s; deterministic: {submission.run_metadata.deterministic}.', '', '## 2. Executive summary', f'El análisis determinista identificó {len(submission.findings)} hallazgo(s) a partir de registros SQLite y cerró {len(submission.leads_not_pursued)} lead(s) sin acusación.', '', '| | |', '|---|---|', f'| Findings | {len(submission.findings)} ({proven} proven, {len(submission.findings)-proven} probable) |', f'| Total exposure | ${exposure:,.2f} MXN |', f'| Leads investigated and closed | {len(submission.leads_not_pursued)} |']
     for finding in submission.findings:
         lines += ['', f'## 3. {", ".join(finding.entities)} — {finding.scheme_type}', f'**Rule broken:** {finding.rule_broken}', f'**Amount and confidence:** ${finding.peso_amount:,.2f} MXN — {finding.confidence}', '', f'**What happened:** {finding.narrative}', '', '**Money trail:**']
+        lines += ['```mermaid', 'flowchart LR']
         if finding.money_trail:
-            lines += ['```mermaid', 'flowchart LR']
-            lines += [f'  {index}["{step.from_}"] -->|"${step.amount:,.2f} · {step.exhibit_id}"| {index + 1}["{step.to}"]' for index, step in enumerate(finding.money_trail)]
-            lines += ['```']
+            lines += [f'  N{index}["{step.from_}"] -->|"${step.amount:,.2f} · {step.exhibit_id}"| N{index + 1}["{step.to}"]' for index, step in enumerate(finding.money_trail)]
         else:
-            lines += ['No transfer trail is required for this document-only finding.']
+            entity = (finding.entities[0] if finding.entities else 'Entidad').replace('"', "'")
+            lines += [f'  ENT["{entity}"] --> EX0["{finding.exhibits[0].exhibit_id} · {finding.exhibits[0].source_table}"]']
+            lines += [f'  EX{index - 1} --> EX{index}["{exhibit.exhibit_id} · {exhibit.source_table}"]' for index, exhibit in enumerate(finding.exhibits[1:], start=1)]
+        lines += ['```']
         lines += ['', '**Exhibits:**', '', '| ID | Source | Record | What it proves |', '|---|---|---|---|']
         lines += [f'| {e.exhibit_id} | {e.source_table} | {e.record_id} | {e.note} |' for e in finding.exhibits]
         amount_exhibits = [e for e in finding.exhibits if e.source_table in AMOUNT_TABLES]
-        lines += ['', f'**Reconciliation:** peso_amount = ${finding.peso_amount:,.2f}; {_reconciliation_expression(finding, estate_path)}. Exhibits monetarios: {", ".join(e.exhibit_id for e in amount_exhibits)}.', '', f'**Adversarial review:** {_review(finding)}']
+        lines += ['', f'**Reconciliation:** peso_amount = ${finding.peso_amount:,.2f}; {_reconciliation_expression(finding, estate_path)}. Exhibits monetarios: {", ".join(e.exhibit_id for e in amount_exhibits)}.', '', f'**Adversarial review / deterministic validation:** {_review(finding)}']
     lines += ['', '## 4. Leads not pursued']
     lines += [f'- **{lead.entity}** — Signal: {lead.signal}. Closed because: {lead.reason} Tools: {", ".join(lead.tool_calls_made) or "none"}. Closed by: {lead.closed_by}.' for lead in submission.leads_not_pursued] or ['No leads met the preliminary signal threshold and were closed in this run.']
-    lines += ['', '## 5. Method and limits', 'Detectors use read-only SQLite queries and deterministic rules; narrative is generated from the already-validated evidence. The run does not infer identities beyond the estate, fetch external data, or prove intent. Reproduce by running POST /audit/run with the same estate and seed.']
+    lines += ['', '## 5. Method and limits', 'Los detectores consultan SQLite en modo read-only y publican un candidato solo después de un hard validator determinista. No se usa LLM: la narrativa se forma únicamente con evidencia ya validada. Total exposure deduplica registros monetarios compartidos entre hallazgos; peso_amount conserva la exposición propia conciliable de cada caso. La auditoría no consulta fuentes externas, no atribuye identidades fuera del estate y no prueba intención. Los patrones marcados probable requieren investigación humana. Reproduce mediante POST /audit/run con el mismo estate y seed; el wall-clock es una medición operativa y puede variar entre ejecuciones.']
     return '\n'.join(lines) + '\n'

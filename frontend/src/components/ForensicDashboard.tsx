@@ -11,15 +11,24 @@ import {
   Layers,
   FileCode,
   CheckCircle2,
+  ChevronDown,
   Coins,
+  Filter,
   Sparkles,
 } from "lucide-react";
 import { useMemo, useState, useRef } from "react";
 import { API, api } from "@/lib/api";
-import type { ForensicPreflight, ForensicSubmission } from "@/lib/types";
+import type { ForensicPreflight, ForensicScheme, ForensicSubmission } from "@/lib/types";
 
 const KEY = "buenpaso-forensic-v1";
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+const schemeLabels: Record<ForensicScheme, string> = {
+  phantom_vendor: "Phantom vendor",
+  kickback: "Kickback",
+  round_tripping: "Round tripping",
+  threshold_splitting: "Fraccionamiento",
+  revenue_inflation: "Inflación de ingresos",
+};
 
 function save(name: string, data: string, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -30,14 +39,14 @@ function save(name: string, data: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function sqliteBase64(file: File): Promise<string> {
+function fileBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("No se pudo leer el estate SQLite."));
+    reader.onerror = () => reject(new Error(`No se pudo leer ${file.name}.`));
     reader.onload = () => {
       const value = typeof reader.result === "string" ? reader.result.split(",")[1] : "";
       if (value) resolve(value);
-      else reject(new Error("El estate está vacío."));
+      else reject(new Error(`${file.name} está vacío.`));
     };
     reader.readAsDataURL(file);
   });
@@ -67,7 +76,7 @@ function MethodPanel() {
 
 export default function ForensicDashboard() {
   const [estatePath, setEstatePath] = useState("");
-  const [estateFile, setEstateFile] = useState<File | null>(null);
+  const [estateFiles, setEstateFiles] = useState<File[]>([]);
   const [seed, setSeed] = useState("2026");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,6 +94,8 @@ export default function ForensicDashboard() {
   const [preflighting, setPreflighting] = useState(false);
   const [preflight, setPreflight] = useState<ForensicPreflight | null>(null);
   const [error, setError] = useState("");
+  const [schemeFilter, setSchemeFilter] = useState<ForensicScheme | "all">("all");
+  const [expandedFindingIds, setExpandedFindingIds] = useState<Set<string>>(() => new Set());
 
   const totals = useMemo(
     () => ({
@@ -94,19 +105,60 @@ export default function ForensicDashboard() {
     [report]
   );
 
+  const availableSchemes = useMemo(() => {
+    const counts = new Map<ForensicScheme, number>();
+    for (const finding of report?.findings ?? []) {
+      counts.set(finding.scheme_type, (counts.get(finding.scheme_type) ?? 0) + 1);
+    }
+    return Array.from(counts, ([scheme, count]) => ({ scheme, count }));
+  }, [report]);
+
+  const visibleFindings = useMemo(
+    () => (report?.findings ?? []).filter((finding) => schemeFilter === "all" || finding.scheme_type === schemeFilter),
+    [report, schemeFilter]
+  );
+
+  function findingId(scheme: ForensicScheme, index: number) {
+    return `${scheme}-${index}`;
+  }
+
+  function toggleFinding(id: string) {
+    setExpandedFindingIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setActiveReport(nextReport: ForensicSubmission) {
+    setReport(nextReport);
+    setSchemeFilter("all");
+    setExpandedFindingIds(new Set());
+    localStorage.setItem(KEY, JSON.stringify(nextReport));
+  }
+
+  async function uploadBody() {
+    const encoded = await Promise.all(
+      estateFiles.map(async (file) => ({ filename: file.name, content_base64: await fileBase64(file) }))
+    );
+    return { estate_files: encoded, seed: Number(seed) };
+  }
+
   async function inspectEstate(): Promise<boolean> {
-    if (!estateFile && !estatePath.trim()) {
-      setError("Selecciona un archivo SQLite o indica una ruta local del backend.");
+    if (!estateFiles.length && !estatePath.trim()) {
+      setError("Selecciona un archivo DB/ZIP, las ocho tablas CSV o indica una ruta local del backend.");
       return false;
     }
     setPreflighting(true);
     setError("");
     try {
-      if (estateFile && estateFile.size > 14 * 1024 * 1024) {
-        throw new Error("El estate supera 14 MB; usa una ruta local del backend o un archivo menor.");
+      const uploadBytes = estateFiles.reduce((sum, file) => sum + file.size, 0);
+      if (uploadBytes > 14 * 1024 * 1024) {
+        throw new Error("La carga total supera 14 MB; usa una ruta local del backend o archivos menores.");
       }
-      const input = estateFile
-        ? { path: "/audit/preflight/upload", body: { estate_base64: await sqliteBase64(estateFile), seed: Number(seed) } }
+      const input = estateFiles.length
+        ? { path: "/audit/preflight/upload", body: await uploadBody() }
         : { path: "/audit/preflight", body: { estate_path: estatePath.trim(), seed: Number(seed) } };
 
       const result = await api<ForensicPreflight>(input.path, input.body);
@@ -127,13 +179,12 @@ export default function ForensicDashboard() {
     setLoading(true);
     setError("");
     try {
-      const input = estateFile
-        ? { path: "/audit/upload", body: { estate_base64: await sqliteBase64(estateFile), seed: Number(seed) } }
+      const input = estateFiles.length
+        ? { path: "/audit/upload", body: await uploadBody() }
         : { path: "/audit/run", body: { estate_path: estatePath.trim(), seed: Number(seed) } };
 
       const result = await api<ForensicSubmission>(input.path, input.body);
-      setReport(result);
-      localStorage.setItem(KEY, JSON.stringify(result));
+      setActiveReport(result);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No fue posible ejecutar la auditoría.");
     } finally {
@@ -156,8 +207,7 @@ export default function ForensicDashboard() {
     setError("");
     try {
       const result = await api<ForensicSubmission>("/audit/demo", { seed: Number(seed) });
-      setReport(result);
-      localStorage.setItem(KEY, JSON.stringify(result));
+      setActiveReport(result);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No fue posible ejecutar el caso demostrativo.");
     } finally {
@@ -199,37 +249,42 @@ export default function ForensicDashboard() {
           <div className="audit-field">
             <div className="audit-field-header">
               <label className="audit-label" htmlFor="estate-file-input">
-                <Database size={14} /> Estate SQLite (.db)
+                <Database size={14} /> Dataset DB, ZIP o CSV
               </label>
               <span className="audit-label-badge">Recomendado</span>
             </div>
 
             <div
-              className={`audit-dropzone ${estateFile ? "has-file" : ""}`}
+              className={`audit-dropzone ${estateFiles.length ? "has-file" : ""}`}
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const file = e.dataTransfer.files?.[0];
-                if (file) setEstateFile(file);
+                const files = Array.from(e.dataTransfer.files ?? []);
+                if (files.length) { setEstateFiles(files); setPreflight(null); }
               }}
             >
               <input
                 id="estate-file-input"
                 ref={fileInputRef}
                 type="file"
-                accept=".db,application/vnd.sqlite3,application/x-sqlite3"
-                onChange={(e) => { setEstateFile(e.target.files?.[0] ?? null); setPreflight(null); }}
+                multiple
+                accept=".db,.sqlite,.sqlite3,.zip,.csv,application/vnd.sqlite3,application/x-sqlite3,application/zip,text/csv"
+                onChange={(e) => { setEstateFiles(Array.from(e.target.files ?? [])); setPreflight(null); }}
                 className="audit-hidden-file"
               />
 
-              {estateFile ? (
+              {estateFiles.length ? (
                 <div className="audit-file-selected">
                   <div className="audit-file-info">
                     <Database size={20} className="audit-file-icon" />
                     <div>
-                      <strong className="audit-file-name">{estateFile.name}</strong>
-                      <small className="audit-file-size">{(estateFile.size / (1024 * 1024)).toFixed(2)} MB</small>
+                      <strong className="audit-file-name">
+                        {estateFiles.length === 1 ? estateFiles[0]?.name : `${estateFiles.length} archivos CSV`}
+                      </strong>
+                      <small className="audit-file-size">
+                        {(estateFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(2)} MB
+                      </small>
                     </div>
                   </div>
                   <button
@@ -237,7 +292,7 @@ export default function ForensicDashboard() {
                     className="audit-remove-file"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setEstateFile(null);
+                      setEstateFiles([]);
                       setPreflight(null);
                       if (fileInputRef.current) fileInputRef.current.value = "";
                     }}
@@ -251,13 +306,13 @@ export default function ForensicDashboard() {
                     <Upload size={18} />
                   </div>
                   <div>
-                    <span className="dropzone-title">Seleccionar o arrastrar archivo .db</span>
-                    <small className="dropzone-subtitle">Máximo 14 MB para carga en navegador</small>
+                    <span className="dropzone-title">Seleccionar DB, ZIP o las 8 tablas CSV</span>
+                    <small className="dropzone-subtitle">CSV: vendors.csv, invoices.csv, ledger.csv… · máximo 14 MB</small>
                   </div>
                 </div>
               )}
             </div>
-            <small className="audit-hint">El archivo se analiza en memoria y no se almacena en el servidor.</small>
+            <small className="audit-hint">ZIP admite un SQLite o las ocho tablas CSV oficiales. Los archivos son temporales y no se conservan.</small>
           </div>
 
           <div className="audit-divider">
@@ -295,7 +350,7 @@ export default function ForensicDashboard() {
             <button
               type="submit"
               className="audit-submit-button"
-              disabled={loading || preflighting || (!estateFile && !estatePath.trim())}
+              disabled={loading || preflighting || (!estateFiles.length && !estatePath.trim())}
             >
               {loading ? (
                 <>
@@ -310,7 +365,7 @@ export default function ForensicDashboard() {
               )}
             </button>
           </div>
-          <button type="button" className="audit-preflight-button" disabled={loading || preflighting || (!estateFile && !estatePath.trim())} onClick={() => void inspectEstate()}>
+          <button type="button" className="audit-preflight-button" disabled={loading || preflighting || (!estateFiles.length && !estatePath.trim())} onClick={() => void inspectEstate()}>
             <ShieldCheck size={15} /> {preflighting ? "Verificando dataset…" : "Verificar dataset antes de auditar"}
           </button>
           <button type="button" className="audit-demo-button" disabled={loading} onClick={runDemo}>
@@ -425,15 +480,45 @@ export default function ForensicDashboard() {
           </div>
 
           {/* Findings List */}
+          {report.findings.length > 0 ? (
+            <section className="finding-filter-bar" aria-label="Filtrar reportes por patrón detectado">
+              <div className="finding-filter-label"><Filter size={15} /> Filtrar reportes</div>
+              <div className="finding-filter-options">
+                <button
+                  type="button"
+                  className={schemeFilter === "all" ? "active" : ""}
+                  aria-pressed={schemeFilter === "all"}
+                  onClick={() => setSchemeFilter("all")}
+                >
+                  Todos <span>{report.findings.length}</span>
+                </button>
+                {availableSchemes.map(({ scheme, count }) => (
+                  <button
+                    type="button"
+                    key={scheme}
+                    className={`scheme-${scheme} ${schemeFilter === scheme ? "active" : ""}`}
+                    aria-pressed={schemeFilter === scheme}
+                    onClick={() => setSchemeFilter(scheme)}
+                  >
+                    {schemeLabels[scheme]} <span>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <div className="finding-list">
-            {report.findings.length > 0 ? (
-              report.findings.map((f, index) => (
-                <article className="finding-card" key={`${f.scheme_type}-${index}`}>
+            {visibleFindings.length > 0 ? (
+              visibleFindings.map((f) => {
+                const index = report.findings.indexOf(f);
+                const id = findingId(f.scheme_type, index);
+                const expanded = expandedFindingIds.has(id);
+                return (
+                <article className={`finding-card ${expanded ? "is-expanded" : ""}`} key={id}>
                   <header className="finding-header">
                     <div className="finding-title-group">
                       <div className="finding-pill-row">
                         <span className={`scheme-badge scheme-${f.scheme_type}`}>
-                          {f.scheme_type.replaceAll("_", " ")}
+                          {schemeLabels[f.scheme_type]}
                         </span>
                         <span className={`confidence-badge ${f.confidence}`}>
                           {f.confidence === "proven" ? "✓ Comprobado" : "Probable"}
@@ -446,7 +531,19 @@ export default function ForensicDashboard() {
                       <strong className="amount-value">{money.format(f.peso_amount)}</strong>
                     </div>
                   </header>
+                  <button
+                    type="button"
+                    className="finding-toggle"
+                    aria-expanded={expanded}
+                    aria-controls={`${id}-details`}
+                    onClick={() => toggleFinding(id)}
+                  >
+                    <span className="finding-toggle-affordance">
+                      {expanded ? "Ocultar detalle" : "Ver detalle"} <ChevronDown size={18} aria-hidden="true" />
+                    </span>
+                  </button>
 
+                  {expanded ? <div className="finding-details" id={`${id}-details`}>
                   <div className="finding-rule-callout">
                     <strong>Regla infringida:</strong>
                     <span>{f.rule_broken}</span>
@@ -517,11 +614,13 @@ export default function ForensicDashboard() {
                       exportado muestra la ecuación auditable y los identificadores de cotejo.
                     </span>
                   </div>
+                  </div> : null}
                 </article>
-              ))
+                );
+              })
             ) : (
               <div className="finding-empty">
-                <p>No se encontraron patrones que superaran el umbral determinista de irregularidad.</p>
+                <p>{report.findings.length ? "No hay reportes para este filtro." : "No se encontraron patrones que superaran el umbral determinista de irregularidad."}</p>
               </div>
             )}
           </div>
@@ -580,7 +679,7 @@ export default function ForensicDashboard() {
           </div>
           <h2>Expediente listo para ejecución</h2>
           <p className="forensic-empty-desc">
-            Carga un estate SQLite (.db) o ingresa una ruta local del backend para generar y conservar un expediente
+            Carga un estate SQLite, un ZIP o las ocho tablas CSV oficiales; también puedes ingresar una ruta local del backend para generar un expediente
             reproducible, con detección determinista de irregularidades, rastro financiero y conciliación de evidencias.
           </p>
 

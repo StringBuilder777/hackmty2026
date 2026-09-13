@@ -8,6 +8,7 @@ than to a planted answer key.
 from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 import sqlite3
 from pathlib import Path
 
@@ -310,10 +311,17 @@ def test_physical_row_order_does_not_change_semantic_output(tmp_path: Path) -> N
     assert ordered.model_dump(exclude={"run_metadata"}) == reversed_submission.model_dump(exclude={"run_metadata"})
 
 
-def test_same_seed_reproduces_the_exact_case_file(tmp_path: Path) -> None:
+def test_same_seed_reproduces_case_file_except_measured_wall_clock(tmp_path: Path) -> None:
     path = tmp_path / "deterministic.db"
     _mixed_estate(path, reverse_rows=False)
 
-    rendered = [render_case_file(run_forensic_audit(str(path), seed=8701), str(path)) for _ in range(3)]
+    submissions = [run_forensic_audit(str(path), seed=8701) for _ in range(3)]
+    assert submissions[0].model_dump(exclude={'run_metadata'}) == submissions[1].model_dump(exclude={'run_metadata'})
+    assert submissions[1].model_dump(exclude={'run_metadata'}) == submissions[2].model_dump(exclude={'run_metadata'})
 
-    assert rendered[0] == rendered[1] == rendered[2]
+    rendered = [render_case_file(submission, str(path)) for submission in submissions]
+    normalized = [
+        re.sub(r'wall-clock: [0-9.]+s', 'wall-clock: <measured>', case_file)
+        for case_file in rendered
+    ]
+    assert normalized[0] == normalized[1] == normalized[2]

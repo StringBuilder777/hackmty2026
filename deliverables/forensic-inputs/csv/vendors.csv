@@ -1,0 +1,6 @@
+rfc,legal_name,registered_date,address,bank_clabe,category,contact_email
+EFOS010101AAA,Servicios Fantasma SA,2020-01-01,Monterrey,111111111111111111,Consultoría,efos@example.mx
+SPLIT010101BBB,Proveedora Fraccionada SA,2021-01-01,Monterrey,222222222222222222,Mantenimiento,split@example.mx
+VENDORA0101,Proveedor A SA,2021-01-01,Monterrey,VENDOR-A,Servicios,a@example.mx
+VENDORB0101,Proveedor B SA,2021-01-01,Monterrey,VENDOR-B,Servicios,b@example.mx
+DECOY010101AAA,Proveedor con compras espaciadas SA,2021-01-01,Monterrey,333333333333333333,Mantenimiento,decoy@example.mx

@@ -25,12 +25,36 @@ from .services.branches import resolve
 from .services.routing import calculate_route
 from .services.demo import populate
 from .services.forensic import create_demo_estate, inspect_forensic_estate, render_case_file, run_forensic_audit
+from .services.estate_ingest import uploaded_estate
 from .services.pickup import fetch_real_pickup_points
 
 jobs: dict[str, tuple[float, Analysis]] = {}
 last_case_file: str | None = None
 rate: dict[str, deque] = defaultdict(deque)
 semaphore = asyncio.Semaphore(3)
+MAX_AUDIT_FILE_BYTES = 14 * 1024 * 1024
+
+
+def _decode_audit_upload(payload: AuditUploadInput) -> list[tuple[str, bytes]]:
+    encoded = (
+        [(payload.estate_filename, payload.estate_base64)]
+        if payload.estate_base64 is not None
+        else [(item.filename, item.content_base64) for item in payload.estate_files]
+    )
+    files: list[tuple[str, bytes]] = []
+    total = 0
+    for filename, content in encoded:
+        try:
+            raw = base64.b64decode(content, validate=True)
+        except ValueError as exc:
+            raise ValueError(f'{filename}: contenido base64 inválido.') from exc
+        if not raw:
+            raise ValueError(f'{filename}: el archivo está vacío.')
+        total += len(raw)
+        if total > MAX_AUDIT_FILE_BYTES:
+            raise ValueError('La carga total excede 14 MB.')
+        files.append((filename, raw))
+    return files
 
 
 @asynccontextmanager
@@ -231,18 +255,13 @@ async def audit_preflight(payload: AuditRunInput):
 
 @app.post('/audit/upload', response_model=Submission)
 async def audit_upload(payload: AuditUploadInput):
-    """Audit a browser-selected database without retaining its original file."""
+    """Audit browser-selected DB, ZIP, or official CSV tables without retention."""
     global last_case_file
     try:
-        raw = base64.b64decode(payload.estate_base64, validate=True)
-        if not raw.startswith(b'SQLite format 3\x00'):
-            raise ValueError('El archivo no es una base SQLite válida.')
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.db') as estate:
-            estate.write(raw)
-            estate.flush()
-            submission = await asyncio.to_thread(run_forensic_audit, estate.name, payload.seed)
-            last_case_file = render_case_file(submission, estate.name)
+        files = _decode_audit_upload(payload)
+        with uploaded_estate(files) as (estate_path, _):
+            submission = await asyncio.to_thread(run_forensic_audit, estate_path, payload.seed)
+            last_case_file = render_case_file(submission, estate_path)
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
     return submission
@@ -251,14 +270,10 @@ async def audit_upload(payload: AuditUploadInput):
 @app.post('/audit/preflight/upload', response_model=AuditPreflight)
 async def audit_preflight_upload(payload: AuditUploadInput):
     try:
-        raw = base64.b64decode(payload.estate_base64, validate=True)
-        if not raw.startswith(b'SQLite format 3\x00'):
-            raise ValueError('El archivo no es una base SQLite válida.')
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.db') as estate:
-            estate.write(raw)
-            estate.flush()
-            return await asyncio.to_thread(inspect_forensic_estate, estate.name)
+        files = _decode_audit_upload(payload)
+        with uploaded_estate(files) as (estate_path, source_name):
+            preflight = await asyncio.to_thread(inspect_forensic_estate, estate_path)
+            return preflight.model_copy(update={'estate_filename': source_name})
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
