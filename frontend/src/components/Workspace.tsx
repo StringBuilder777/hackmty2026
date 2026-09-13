@@ -119,9 +119,9 @@ export default function Workspace() {
   const [install, setInstall] = useState<InstallEvent | null>(null);
   const [locationError, setLocationError] = useState("");
   const [manual, setManual] = useState(false);
-  const [view, setView] = useState<WorkspaceView>(() =>
-    typeof window === "undefined" ? "explore" : viewFromHash(window.location.hash),
-  );
+  // Keep the first client render identical to SSR. The hash is applied after
+  // hydration so direct links such as /#auditoria do not produce a mismatch.
+  const [view, setView] = useState<WorkspaceView>("explore");
   const [cartTransition, setCartTransition] = useState<Product | null>(null);
   const cartTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generation = useRef(0);
@@ -149,6 +149,7 @@ export default function Workspace() {
 
   useEffect(() => {
     const syncViewFromHash = () => setView(viewFromHash(window.location.hash));
+    syncViewFromHash();
     window.addEventListener("hashchange", syncViewFromHash);
     return () => window.removeEventListener("hashchange", syncViewFromHash);
   }, []);

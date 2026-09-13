@@ -133,6 +133,15 @@ export interface ForensicSubmission {
   seed: number; findings: ForensicFinding[]; leads_not_pursued: LeadNotPursued[];
   run_metadata: { llm_calls: number; mxn_cost: number; wall_clock_seconds: number; cost_by_role: Record<string, number>; deterministic: boolean; };
 }
+export interface ForensicPreflight {
+  estate_filename: string;
+  estate_sha256: string;
+  estate_bytes: number;
+  tables: Record<string, number>;
+  period: { from_date: string | null; to_date: string | null };
+  quality_warnings: string[];
+  ready: boolean;
+}
 export interface Selection {
   product: Product;
   branchId: BranchId | null;

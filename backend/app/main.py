@@ -11,7 +11,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from .models import AnalysisInput, Analysis, AuditRunInput, AuditUploadInput, RouteInput, Submission
+from .models import AnalysisInput, Analysis, AuditDemoInput, AuditPreflight, AuditRunInput, AuditUploadInput, RouteInput, Submission
 from .services.fetch import fetch_html
 from .services.extraction import extract
 from .services.store import inspect_store
@@ -24,7 +24,7 @@ from .services.search import alternatives
 from .services.branches import resolve
 from .services.routing import calculate_route
 from .services.demo import populate
-from .services.forensic import render_case_file, run_forensic_audit
+from .services.forensic import create_demo_estate, inspect_forensic_estate, render_case_file, run_forensic_audit
 
 jobs: dict[str, tuple[float, Analysis]] = {}
 last_case_file: str | None = None
@@ -71,7 +71,7 @@ async def limits(request: Request, call_next):
         body = bytearray()
         async for chunk in request.stream():
             body.extend(chunk)
-            audit_upload = request.url.path == '/audit/upload'
+            audit_upload = request.url.path in ('/audit/upload', '/audit/preflight/upload')
             max_body = 20 * 1024 * 1024 if audit_upload else 16384
             if len(body) > max_body:
                 return JSONResponse(status_code=413, content={'error': {'code': 'size', 'message': f'Solicitud demasiado grande (máximo {max_body // 1024 // 1024 if audit_upload else 16} {"MB" if audit_upload else "KB"}).'}})
@@ -201,6 +201,14 @@ async def audit_run(payload: AuditRunInput):
     return submission
 
 
+@app.post('/audit/preflight', response_model=AuditPreflight)
+async def audit_preflight(payload: AuditRunInput):
+    try:
+        return await asyncio.to_thread(inspect_forensic_estate, payload.estate_path)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.post('/audit/upload', response_model=Submission)
 async def audit_upload(payload: AuditUploadInput):
     """Audit a browser-selected database without retaining its original file."""
@@ -217,6 +225,33 @@ async def audit_upload(payload: AuditUploadInput):
             last_case_file = render_case_file(submission, estate.name)
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
+    return submission
+
+
+@app.post('/audit/preflight/upload', response_model=AuditPreflight)
+async def audit_preflight_upload(payload: AuditUploadInput):
+    try:
+        raw = base64.b64decode(payload.estate_base64, validate=True)
+        if not raw.startswith(b'SQLite format 3\x00'):
+            raise ValueError('El archivo no es una base SQLite válida.')
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.db') as estate:
+            estate.write(raw)
+            estate.flush()
+            return await asyncio.to_thread(inspect_forensic_estate, estate.name)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post('/audit/demo', response_model=Submission)
+async def audit_demo(payload: AuditDemoInput):
+    """Run a disposable, clearly synthetic estate for the live product demo."""
+    global last_case_file
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix='.db') as estate:
+        await asyncio.to_thread(create_demo_estate, estate.name)
+        submission = await asyncio.to_thread(run_forensic_audit, estate.name, payload.seed)
+        last_case_file = render_case_file(submission, estate.name)
     return submission
 
 

@@ -7,20 +7,110 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import hashlib
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Iterable
 
-from ..models import Exhibit, Finding, LeadNotPursued, MoneyTrailStep, RunMetadata, Submission
+from ..models import AuditPeriod, AuditPreflight, Exhibit, Finding, LeadNotPursued, MoneyTrailStep, RunMetadata, Submission
 from .agent import forensic_narrative
 
 AMOUNT_TABLES = {'invoices': 'total', 'bank_txns': 'amount', 'purchase_orders': 'amount', 'contracts': 'value'}
+RULESET_VERSION = '2026.09.12.2'
+ROUND_TRIP_MAX_DAYS = 14
+ROUND_TRIP_AMOUNT_VARIANCE = 0.02
+SPLIT_WINDOW_DAYS = 14
+SPLIT_MIN_INVOICES = 3
 REQUIRED_COLUMNS = {
     'vendors': {'rfc', 'bank_clabe'}, 'invoices': {'uuid', 'issuer_rfc', 'issue_date', 'total', 'status'},
     'ledger': {'entry_id', 'invoice_uuid'}, 'bank_txns': {'txn_id', 'date', 'from_clabe', 'to_clabe', 'amount'},
     'purchase_orders': {'po_id', 'vendor_rfc'}, 'contracts': {'contract_id', 'vendor_rfc'},
     'employees': {'emp_id', 'bank_clabe'}, 'efos_list': {'rfc', 'status'},
 }
+
+
+def create_demo_estate(path: str) -> None:
+    """Create an isolated disposable estate that exercises all five detectors."""
+    conn = sqlite3.connect(path)
+    conn.executescript('''
+    CREATE TABLE vendors (rfc TEXT PRIMARY KEY, legal_name TEXT, registered_date TEXT, address TEXT, bank_clabe TEXT, category TEXT, contact_email TEXT);
+    CREATE TABLE invoices (uuid TEXT PRIMARY KEY, issuer_rfc TEXT, receiver_rfc TEXT, issue_date TEXT, subtotal REAL, iva REAL, total REAL, concepto_text TEXT, uso_cfdi TEXT, forma_pago TEXT, metodo_pago TEXT, status TEXT);
+    CREATE TABLE ledger (entry_id INTEGER PRIMARY KEY, date TEXT, account_code TEXT, account_name TEXT, debit REAL, credit REAL, description TEXT, invoice_uuid TEXT, cost_center TEXT, approver TEXT);
+    CREATE TABLE bank_txns (txn_id TEXT PRIMARY KEY, date TEXT, from_clabe TEXT, to_clabe TEXT, amount REAL, reference TEXT, channel TEXT);
+    CREATE TABLE purchase_orders (po_id TEXT PRIMARY KEY, vendor_rfc TEXT, date TEXT, amount REAL, requester TEXT, approver TEXT, description TEXT);
+    CREATE TABLE contracts (contract_id TEXT PRIMARY KEY, vendor_rfc TEXT, start_date TEXT, value REAL, scope_text TEXT);
+    CREATE TABLE employees (emp_id TEXT PRIMARY KEY, name TEXT, role TEXT, bank_clabe TEXT, hire_date TEXT);
+    CREATE TABLE efos_list (rfc TEXT PRIMARY KEY, legal_name TEXT, status TEXT, publication_date TEXT);
+    INSERT INTO vendors VALUES ('EFOS010101AAA','Servicios Fantasma SA','2020-01-01','Monterrey','111111111111111111','Consultoría','efos@example.mx');
+    INSERT INTO vendors VALUES ('SPLIT010101BBB','Proveedora Fraccionada SA','2021-01-01','Monterrey','222222222222222222','Mantenimiento','split@example.mx');
+    INSERT INTO vendors VALUES ('VENDORA0101','Proveedor A SA','2021-01-01','Monterrey','VENDOR-A','Servicios','a@example.mx');
+    INSERT INTO vendors VALUES ('VENDORB0101','Proveedor B SA','2021-01-01','Monterrey','VENDOR-B','Servicios','b@example.mx');
+    INSERT INTO vendors VALUES ('DECOY010101AAA','Proveedor con compras espaciadas SA','2021-01-01','Monterrey','333333333333333333','Mantenimiento','decoy@example.mx');
+    INSERT INTO employees VALUES ('EMP:0001','Ana Ejemplo','Compras','111111111111111111','2020-01-01');
+    INSERT INTO efos_list VALUES ('EFOS010101AAA','Servicios Fantasma SA','definitivo','2025-01-01');
+    INSERT INTO invoices VALUES ('EFOS-001','EFOS010101AAA','COMPANY010101AAA','2026-01-01',100000,16000,116000,'Consultoría','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('SPLIT-001','SPLIT010101BBB','COMPANY010101AAA','2026-01-02',42000,6720,48720,'Servicio','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('SPLIT-002','SPLIT010101BBB','COMPANY010101AAA','2026-01-03',42000,6720,48720,'Servicio','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('SPLIT-003','SPLIT010101BBB','COMPANY010101AAA','2026-01-04',42000,6720,48720,'Servicio','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('DECOY-001','DECOY010101AAA','COMPANY010101AAA','2025-01-02',42000,6720,48720,'Servicio','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('DECOY-002','DECOY010101AAA','COMPANY010101AAA','2025-07-02',42000,6720,48720,'Servicio','G03','03','PUE','vigente');
+    INSERT INTO invoices VALUES ('REV-001','COMPANY010101AAA','CLIENT010101AAA','2026-01-31',100000,16000,116000,'Venta','G03','03','PUE','cancelado');
+    INSERT INTO ledger VALUES (1,'2026-01-31','4000','Ingresos',0,116000,'Ingreso registrado','REV-001','CC-01','Ana Ejemplo');
+    INSERT INTO ledger VALUES (2,'2026-01-31','1100','Clientes',116000,0,'Cuenta cliente','REV-001','CC-01','Ana Ejemplo');
+    INSERT INTO bank_txns VALUES ('CYCLE-001','2026-01-01','COMPANY-CLABE','VENDOR-A',100000,'Salida','SPEI');
+    INSERT INTO bank_txns VALUES ('CYCLE-002','2026-01-02','VENDOR-A','VENDOR-B',100000,'Intermediación','SPEI');
+    INSERT INTO bank_txns VALUES ('CYCLE-003','2026-01-03','VENDOR-B','COMPANY-CLABE',100000,'Retorno','SPEI');
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def inspect_forensic_estate(estate_path: str) -> AuditPreflight:
+    """Read-only schema and quality profile shown before an audit is run."""
+    auditor = ForensicAuditor(estate_path, seed=0)
+    warnings: list[str] = []
+    with auditor._connection() as conn:
+        tables = auditor._tables(conn)
+        auditor._validate_estate(conn, tables)
+        counts = {table: int(conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]) for table in sorted(REQUIRED_COLUMNS)}
+        dates = [auditor._date(row[0]) for row in conn.execute('SELECT issue_date FROM invoices WHERE issue_date IS NOT NULL')]
+        valid_dates = sorted(value for value in dates if value is not None)
+        invalid_dates = sum(value is None for value in dates)
+        if invalid_dates:
+            warnings.append(f'invoices.issue_date: {invalid_dates} fecha(s) inválida(s) se excluirán de reglas temporales.')
+        for table, column in (('invoices', 'total'), ('bank_txns', 'amount'), ('ledger', 'credit')):
+            invalid = int(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {column} IS NULL OR typeof({column}) NOT IN ('integer', 'real')").fetchone()[0])
+            if invalid:
+                warnings.append(f'{table}.{column}: {invalid} valor(es) no numérico(s) o nulo(s).')
+        duplicate_invoices = int(conn.execute('''SELECT COUNT(*) FROM (
+            SELECT issuer_rfc, receiver_rfc, issue_date, total, concepto_text
+            FROM invoices GROUP BY issuer_rfc, receiver_rfc, issue_date, total, concepto_text HAVING COUNT(*) > 1
+        )''').fetchone()[0])
+        if duplicate_invoices:
+            warnings.append(f'invoices: {duplicate_invoices} grupo(s) de factura potencialmente duplicado(s).')
+        if not valid_dates:
+            warnings.append('invoices: no hay fechas ISO válidas; reglas temporales quedarán limitadas.')
+    return AuditPreflight(
+        estate_filename=auditor.path.name,
+        estate_sha256=_sha256(auditor.path),
+        estate_bytes=auditor.path.stat().st_size,
+        tables=counts,
+        period=AuditPeriod(
+            from_date=valid_dates[0].isoformat() if valid_dates else None,
+            to_date=valid_dates[-1].isoformat() if valid_dates else None,
+        ),
+        quality_warnings=warnings,
+        ready=True,
+    )
 
 
 class ForensicAuditor:
@@ -46,7 +136,26 @@ class ForensicAuditor:
 
     @staticmethod
     def _amount(rows: Iterable[sqlite3.Row], column: str) -> float:
-        return round(sum(float(row[column] or 0) for row in rows), 2)
+        return round(sum(ForensicAuditor._number(row[column]) for row in rows), 2)
+
+    @staticmethod
+    def _number(value: object) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _date(value: object) -> date | None:
+        try:
+            return date.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _similar_amounts(rows: Iterable[sqlite3.Row], variance: float = ROUND_TRIP_AMOUNT_VARIANCE) -> bool:
+        values = [abs(ForensicAuditor._number(row['amount'])) for row in rows]
+        return bool(values) and min(values) > 0 and (max(values) - min(values)) / max(values) <= variance
 
     @staticmethod
     def _has_columns(conn: sqlite3.Connection, table: str, columns: set[str]) -> bool:
@@ -80,10 +189,15 @@ class ForensicAuditor:
         for row in rows: by_rfc[row['issuer_rfc']].append(row)
         findings = []
         for rfc, invoices in by_rfc.items():
-            exhibits = [self._exhibit('invoices', row['uuid'], f"Factura emitida por {rfc} por ${float(row['total']):,.2f}.") for row in invoices]
+            invoices = [row for row in invoices if self._number(row['total']) > 0]
+            if not invoices:
+                continue
+            exhibits = [self._exhibit('invoices', row['uuid'], f"Factura emitida por {rfc} por ${self._number(row['total']):,.2f}.") for row in invoices]
             exhibits.append(self._exhibit('efos_list', rfc, f"RFC {rfc} aparece en la lista EFOS con estatus {invoices[0]['efos_status']} ."))
             exhibits.append(self._exhibit('vendors', rfc, f"Registro maestro del proveedor {rfc} revisado contra la lista EFOS."))
-            findings.append(self._finding('phantom_vendor', [f'RFC:{rfc}'], 'CFF Art. 69-B: operaciones con EFOS.', 'proven', exhibits, self._amount(invoices, 'total')))
+            status = str(invoices[0]['efos_status']).strip().lower()
+            confidence = 'proven' if status == 'definitivo' else 'probable'
+            findings.append(self._finding('phantom_vendor', [f'RFC:{rfc}'], 'CFF Art. 69-B: operaciones con EFOS.', confidence, exhibits, self._amount(invoices, 'total')))
         return findings, []
 
     def detect_kickback(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
@@ -97,15 +211,27 @@ class ForensicAuditor:
         for row in rows: grouped[(row['rfc'], row['emp_id'])].append(row)
         findings = []
         for (rfc, emp), invoices in grouped.items():
+            invoices = [row for row in invoices if self._number(row['total']) > 0]
+            if not invoices:
+                continue
             exhibits = [self._exhibit('invoices', row['uuid'], f"Factura del proveedor {rfc} vinculada al flujo bajo revisión.") for row in invoices]
             exhibits.extend([self._exhibit('vendors', rfc, f'Proveedor {rfc} comparte CLABE con un empleado.'), self._exhibit('employees', emp, f'Empleado {emp} comparte la CLABE registrada con el proveedor.')])
-            findings.append(self._finding('kickback', [f'RFC:{rfc}', f'EMP:{emp}'], 'Políticas internas de compras: conflicto de interés y pago a tercero relacionado.', 'proven', exhibits, self._amount(invoices, 'total')))
+            employee_entity = str(emp) if str(emp).startswith('EMP:') else f'EMP:{emp}'
+            findings.append(self._finding('kickback', [f'RFC:{rfc}', employee_entity], 'Políticas internas de compras: conflicto de interés y pago a tercero relacionado.', 'proven', exhibits, self._amount(invoices, 'total')))
         return findings, []
 
     def detect_round_tripping(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
         if 'bank_txns' not in tables:
             return [], []
         txns = conn.execute('SELECT * FROM bank_txns WHERE amount > 0 ORDER BY date, txn_id').fetchall()
+        vendor_by_clabe = {
+            str(row['bank_clabe']).strip(): str(row['rfc']).strip()
+            for row in conn.execute("SELECT rfc, bank_clabe FROM vendors WHERE trim(coalesce(bank_clabe, '')) <> ''")
+        }
+        company_rfcs = {
+            str(row['receiver_rfc']).strip()
+            for row in conn.execute("SELECT DISTINCT receiver_rfc FROM invoices WHERE trim(coalesce(receiver_rfc, '')) <> ''")
+        }
         outgoing: dict[str, list[sqlite3.Row]] = defaultdict(list)
         for row in txns: outgoing[row['from_clabe']].append(row)
         findings, seen = [], set()
@@ -116,11 +242,25 @@ class ForensicAuditor:
                         continue
                     key = tuple(sorted((str(first['txn_id']), str(second['txn_id']), str(third['txn_id']))))
                     if key in seen: continue
-                    seen.add(key)
                     rows = [first, second, third]
+                    dates = [self._date(row['date']) for row in rows]
+                    if None in dates or (max(dates) - min(dates)).days > ROUND_TRIP_MAX_DAYS:
+                        continue
+                    if not self._similar_amounts(rows):
+                        continue
+                    entity_rfcs = []
+                    for clabe in (str(first['from_clabe']).strip(), str(first['to_clabe']).strip(), str(second['to_clabe']).strip()):
+                        if clabe in vendor_by_clabe:
+                            entity_rfcs.append(vendor_by_clabe[clabe])
+                        elif clabe in company_rfcs:
+                            entity_rfcs.append(clabe)
+                    entities = [f'RFC:{rfc}' for rfc in dict.fromkeys(entity_rfcs)]
+                    if not entities:
+                        continue
+                    seen.add(key)
                     exhibits = [self._exhibit('bank_txns', row['txn_id'], f"Transferencia {row['from_clabe']} a {row['to_clabe']}.") for row in rows]
-                    trail = [MoneyTrailStep(**{'from': row['from_clabe'], 'to': row['to_clabe'], 'amount': float(row['amount']), 'date': row['date'], 'exhibit_id': exhibit.exhibit_id}) for row, exhibit in zip(rows, exhibits)]
-                    findings.append(self._finding('round_tripping', [f'RFC:CLABE-{first["from_clabe"]}', f'RFC:CLABE-{first["to_clabe"]}'], 'Políticas internas de tesorería: flujo circular sin justificación comercial.', 'probable', exhibits, self._amount(rows, 'amount'), trail))
+                    trail = [MoneyTrailStep(**{'from': row['from_clabe'], 'to': row['to_clabe'], 'amount': self._number(row['amount']), 'date': row['date'], 'exhibit_id': exhibit.exhibit_id}) for row, exhibit in zip(rows, exhibits)]
+                    findings.append(self._finding('round_tripping', entities, 'Políticas internas de tesorería: flujo circular concentrado en 14 días y con importes equivalentes, sin justificación comercial.', 'probable', exhibits, self._amount(rows, 'amount'), trail))
         return findings, []
 
     def detect_threshold_splitting(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
@@ -132,12 +272,23 @@ class ForensicAuditor:
         for row in rows: grouped[row['issuer_rfc']].append(row)
         findings, leads = [], []
         for rfc, invoices in grouped.items():
-            if len(invoices) < 3:
+            dated = [(self._date(row['issue_date']), row) for row in invoices]
+            dated = [(value, row) for value, row in dated if value is not None]
+            selected: list[sqlite3.Row] = []
+            window_end = 0
+            for window_start, (start_date, _) in enumerate(dated):
+                window_end = max(window_end, window_start)
+                while window_end < len(dated) and (dated[window_end][0] - start_date).days <= SPLIT_WINDOW_DAYS:
+                    window_end += 1
+                if window_end - window_start >= SPLIT_MIN_INVOICES:
+                    selected = [row for _, row in dated[window_start:window_end]]
+                    break
+            if not selected:
                 if invoices:
-                    leads.append(LeadNotPursued(entity=f'RFC:{rfc}', signal='threshold_splitting', reason=f"Se revisaron {len(invoices)} factura(s) debajo de $50,000; no alcanzan el mínimo de tres operaciones repetidas.", tool_calls_made=['SQL invoices by issuer and amount'], closed_by='investigator'))
+                    leads.append(LeadNotPursued(entity=f'RFC:{rfc}', signal='threshold_splitting', reason=f"Se revisaron {len(invoices)} factura(s) de $45,000 a menos de $50,000; no hay tres operaciones dentro de una ventana de {SPLIT_WINDOW_DAYS} días.", tool_calls_made=['SQL invoices by issuer, amount and issue_date'], closed_by='investigator'))
                 continue
-            exhibits = [self._exhibit('invoices', row['uuid'], f"Factura por ${float(row['total']):,.2f}, inmediatamente debajo del umbral de $50,000.") for row in invoices]
-            findings.append(self._finding('threshold_splitting', [f'RFC:{rfc}'], 'Políticas internas de compras: prohibición de fraccionar adquisiciones para evadir el umbral de autorización.', 'probable', exhibits, self._amount(invoices, 'total')))
+            exhibits = [self._exhibit('invoices', row['uuid'], f"Factura por ${self._number(row['total']):,.2f}, inmediatamente debajo del umbral de $50,000 y dentro de una ventana de {SPLIT_WINDOW_DAYS} días.") for row in selected]
+            findings.append(self._finding('threshold_splitting', [f'RFC:{rfc}'], 'Políticas internas de compras: prohibición de fraccionar adquisiciones para evadir el umbral de autorización.', 'probable', exhibits, self._amount(selected, 'total')))
         return findings, leads
 
     def detect_revenue_inflation(self, conn: sqlite3.Connection, tables: set[str]) -> tuple[list[Finding], list[LeadNotPursued]]:
@@ -147,11 +298,20 @@ class ForensicAuditor:
         findings, leads = [], []
         for invoice in invoices:
             ledger = conn.execute('SELECT * FROM ledger WHERE invoice_uuid=? ORDER BY entry_id', (invoice['uuid'],)).fetchall()
-            if len(ledger) < 2:
-                leads.append(LeadNotPursued(entity=f'RFC:{invoice["issuer_rfc"]}', signal='revenue_inflation', reason=f"La factura cancelada {invoice['uuid']} fue revisada, pero solo tiene {len(ledger)} asiento(s) asociado(s); no hay base documental suficiente para sostener reconocimiento indebido de ingresos.", tool_calls_made=['SQL invoices status', 'SQL ledger by invoice_uuid'], closed_by='challenger'))
+            revenue_rows = [row for row in ledger if self._number(row['credit']) > 0 and (
+                str(row['account_code'] or '').startswith('4') or
+                any(token in str(row['account_name'] or '').lower() + ' ' + str(row['description'] or '').lower() for token in ('ingreso', 'revenue', 'venta'))
+            )]
+            unreversed_revenue = round(sum(self._number(row['credit']) - self._number(row['debit']) for row in revenue_rows), 2)
+            if self._number(invoice['total']) <= 0 or len(ledger) < 2 or not revenue_rows or unreversed_revenue <= 0:
+                leads.append(LeadNotPursued(entity=f'RFC:{invoice["issuer_rfc"]}', signal='revenue_inflation', reason=f"La factura cancelada {invoice['uuid']} fue revisada, pero no conserva al menos un crédito positivo de ingresos sin reversa verificable.", tool_calls_made=['SQL invoices status', 'SQL ledger by invoice_uuid'], closed_by='challenger'))
                 continue
-            exhibits = [self._exhibit('invoices', invoice['uuid'], 'Factura cancelada que fue registrada como ingreso.'), *[self._exhibit('ledger', row['entry_id'], f"Asiento contable asociado a la factura {invoice['uuid']}.") for row in ledger[:2]]]
-            findings.append(self._finding('revenue_inflation', [f'RFC:{invoice["issuer_rfc"]}'], 'NIF C-3 y políticas de cierre contable: ingresos cancelados no deben mantenerse reconocidos.', 'proven', exhibits, round(float(invoice['total']), 2)))
+            support = next((row for row in ledger if row['entry_id'] != revenue_rows[0]['entry_id']), revenue_rows[0])
+            exhibits = [self._exhibit('invoices', invoice['uuid'], 'Factura cancelada que fue registrada como ingreso.'), self._exhibit('ledger', revenue_rows[0]['entry_id'], f"Crédito de ingreso asociado a la factura {invoice['uuid']} que permanece sin reversa."), self._exhibit('ledger', support['entry_id'], f"Asiento contable asociado a la factura {invoice['uuid']}.")]
+            # The exposed amount is the cancelled CFDI total.  The revenue entry
+            # establishes that recognition persisted; the invoice exhibit makes
+            # the reported peso independently reconcilable by the validator.
+            findings.append(self._finding('revenue_inflation', [f'RFC:{invoice["issuer_rfc"]}'], 'NIF C-3 y políticas de cierre contable: ingresos cancelados no deben mantenerse reconocidos.', 'proven', exhibits, round(self._number(invoice['total']), 2)))
         return findings, leads
 
     def run(self) -> Submission:

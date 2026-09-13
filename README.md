@@ -47,6 +47,25 @@ En **Explorar** se elige primero una de dos tarjetas: **Producto** para revisar 
 
 Los datos demo residen exclusivamente en `backend/app/services/demo.py`: tiendas, precios, ubicaciones e inventario son **ejemplos ficticios**. La imagen generada es ilustrativa, también para la variante plata. No representa una fotografía comercial verificada. El caso demo es determinista y no requiere credenciales. Sí requiere que el backend esté activo; la ruta en auto consulta OSRM por calles reales y el mapa necesita red. Si un proveedor falla, no se reemplaza por una ruta inventada. El modo sin conexión sirve para consultar datos guardados, no para ejecutar de nuevo el demo.
 
+## Demo de auditoría forense
+
+El repositorio incluye un estate SQLite sintético para probar Track 2 sin datos externos. Cubre proveedor fantasma, kickback, round-tripping, fraccionamiento de umbral y revenue inflation. Generarlo y validarlo:
+
+```bash
+cd backend
+.venv/bin/python scripts/create_forensic_demo.py
+.venv/bin/python scripts/run_forensic_demo.py
+.venv/bin/python /Users/stringbuilder/Downloads/student-materials/forensic-auditor/validate_format.py \
+  --submission /tmp/forensic-demo-submission.json --estate data/forensic-demo.db
+.venv/bin/python -m evaluation.run_benchmark
+.venv/bin/python scripts/run_submission.py data/forensic-demo.db --seed 2026 --output /tmp/forensic-package \
+  --validator /Users/stringbuilder/Downloads/student-materials/forensic-auditor/validate_format.py
+```
+
+En la interfaz, abrir **Auditoría** y seleccionar `backend/data/forensic-demo.db`, o pulsar **Probar caso demostrativo (5 esquemas)**. Todos sus datos son ficticios y se usan únicamente para demostración. El benchmark genera cinco estates separados con señales positivas y señuelos; deja sus métricas reproducibles en `backend/evaluation/results.csv`. Sus resultados validan esta batería local, no predicen la calificación sobre los estates ocultos de los jueces.
+
+Antes de ejecutar, **Verificar dataset antes de auditar** genera un preflight local: hash SHA-256, tamaño, conteos de tablas, periodo y advertencias de calidad. `run_submission.py` también lo incorpora al `manifest.json`, junto con seed, versión de reglas, métricas y resultado del validador cuando se proporciona `--validator`. Por seguridad no sobrescribe un paquete existente salvo con `--overwrite`.
+
 ## Qué funciona con datos reales
 
 - Descarga limitada de HTML público y extracción de Product/Offer en JSON-LD, título y metadatos. No ejecuta JavaScript ni evade autenticación o antibots.

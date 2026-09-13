@@ -93,6 +93,25 @@ class AuditUploadInput(Model):
     seed: int
 
 
+class AuditDemoInput(Model):
+    seed: int = 2026
+
+
+class AuditPeriod(Model):
+    from_date: str | None = None
+    to_date: str | None = None
+
+
+class AuditPreflight(Model):
+    estate_filename: str = Field(min_length=1)
+    estate_sha256: str = Field(min_length=64, max_length=64)
+    estate_bytes: int = Field(ge=0)
+    tables: dict[str, int]
+    period: AuditPeriod
+    quality_warnings: list[str] = Field(default_factory=list)
+    ready: bool
+
+
 class Evidence(Model):
     title: str
     status: Literal['observed', 'warning', 'unavailable']

@@ -1,0 +1,6 @@
+benchmark_version,partition,seed,true_positive,false_positive,false_negative,precision,recall
+2026.09.12.1,held_out,104729,5,0,0,1.000,1.000
+2026.09.12.1,held_out,130363,5,0,0,1.000,1.000
+2026.09.12.1,held_out,155921,5,0,0,1.000,1.000
+2026.09.12.1,held_out,196613,5,0,0,1.000,1.000
+2026.09.12.1,held_out,209759,5,0,0,1.000,1.000
