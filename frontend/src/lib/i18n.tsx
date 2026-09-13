@@ -42,6 +42,12 @@ export interface Messages {
     stepRoute: string;
     exploreDemo: string;
     demoNote: string;
+    referencesAriaLabel: string;
+    referencesTitle: string;
+    officialDomain: string;
+    suspiciousSimulation: string;
+    amazonProduct: string;
+    referencesHint: string;
   };
   progress: {
     title: string;
@@ -185,7 +191,7 @@ export interface Messages {
 export const messages: Record<Lang, Messages> = {
   es: {
     header: {
-      brand: "BuenPaso",
+      brand: "SynchroData",
       explore: "Explorar",
       myList: "Mi lista",
       cart: "Carrito",
@@ -222,6 +228,12 @@ export const messages: Record<Lang, Messages> = {
       stepRoute: "Organiza paradas",
       exploreDemo: "Explorar el modo demo",
       demoNote: "Selecciona Demo y pulsa Analizar. Tiendas y precios ficticios.",
+      referencesAriaLabel: "Ejemplos para comparar enlaces",
+      referencesTitle: "Prueba ejemplos para comparar",
+      officialDomain: "Dominio oficial",
+      suspiciousSimulation: "Simulación sospechosa",
+      amazonProduct: "Producto Amazon MX",
+      referencesHint: "Al elegir uno, revisa la URL y pulsa Analizar. El dominio de alerta es reservado y solo sirve como práctica.",
     },
     progress: {
       title: "Revisando tu enlace",
@@ -365,12 +377,12 @@ export const messages: Record<Lang, Messages> = {
       demoNotice: "Demo · tiendas, precios y ubicaciones de ejemplo.",
       realNotice: "Las señales orientan; confirma las condiciones antes de comprar.",
       savedInBrowser: "Tu lista se guarda en este navegador.",
-      attribution: "BuenPaso · HackMTY 2026",
+      attribution: "SynchroData · HackMTY 2026",
     },
   },
   en: {
     header: {
-      brand: "BuenPaso",
+      brand: "SynchroData",
       explore: "Explore",
       myList: "My list",
       cart: "Cart",
@@ -407,6 +419,12 @@ export const messages: Record<Lang, Messages> = {
       stepRoute: "Organize stops",
       exploreDemo: "Explore demo mode",
       demoNote: "Select Demo and click Analyze. Fictitious stores and prices.",
+      referencesAriaLabel: "Link comparison examples",
+      referencesTitle: "Try examples to compare",
+      officialDomain: "Official domain",
+      suspiciousSimulation: "Suspicious simulation",
+      amazonProduct: "Amazon MX product",
+      referencesHint: "After selecting one, review the URL and click Analyze. The alert domain is reserved and only for practice.",
     },
     progress: {
       title: "Checking your link",
@@ -550,7 +568,7 @@ export const messages: Record<Lang, Messages> = {
       demoNotice: "Demo · fictitious stores, prices, and locations.",
       realNotice: "Signals guide you; confirm conditions before buying.",
       savedInBrowser: "Your list is saved in this browser.",
-      attribution: "BuenPaso · HackMTY 2026",
+      attribution: "SynchroData · HackMTY 2026",
     },
   },
 };

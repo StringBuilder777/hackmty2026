@@ -6,7 +6,7 @@ test("demo: analysis, offers, list, street route, branch, failures, offline rest
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
-  await expect(page).toHaveTitle(/BuenPaso/);
+  await expect(page).toHaveTitle(/SynchroData/);
   await expect(
     page.getByRole("heading", { name: "Compra con más contexto." }),
   ).toBeVisible();

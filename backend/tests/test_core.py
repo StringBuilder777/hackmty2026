@@ -310,3 +310,9 @@ def test_provider_json_reads_all_chunks_and_caps_size():
     assert asyncio.run(bounded_json(Response())) == {'ok': True}
     with pytest.raises(ValueError, match='límite'):
         asyncio.run(bounded_json(Response(), 3))
+
+
+def test_bedrock_assessment_accepts_a_markdown_json_fence():
+    from app.services.agent import _parse_assessment_text
+    assessment = _parse_assessment_text('```json\n{"level":"bajo","explanation":"Señales disponibles.","limitations":[]}\n```')
+    assert assessment.level == 'bajo'

@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Completar BuenPaso Forensic Auditor para maximizar los cuatro criterios del reto:
+Completar SynchroData Forensic Auditor para maximizar los cuatro criterios del reto:
 Results, Judgment, Feasibility y Clarity. El sistema debe aceptar una SQLite
 desconocida, producir acusaciones sustentadas y reproducibles, explicar también
 los leads descartados y generar un paquete que funcione sin red.

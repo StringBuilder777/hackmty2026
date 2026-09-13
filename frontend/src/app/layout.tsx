@@ -3,12 +3,12 @@ import "./globals.css";
 import { LangProvider } from "@/lib/i18n";
 
 export const metadata: Metadata = {
-  title: "BuenPaso · Compra con más contexto",
+  title: "SynchroData · Compra con más contexto",
   description:
     "Evalúa señales de riesgo, compara audífonos y planea tu recorrido en Monterrey.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "BuenPaso" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "SynchroData" },
 };
 
 export const viewport: Viewport = {

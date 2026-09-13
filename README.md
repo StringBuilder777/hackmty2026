@@ -1,4 +1,4 @@
-# BuenPaso · HackMTY 2026
+# SynchroData · HackMTY 2026
 
 PWA en español para revisar señales de riesgo de una tienda, comparar audífonos y organizar un recorrido de compras en Monterrey. Monorepo Next.js/React/TypeScript estricto + Tailwind y FastAPI/Pydantic, con Leaflet/OpenStreetMap.
 

@@ -78,7 +78,7 @@ async def registration_profile(url: str) -> tuple[DomainRegistration, Evidence]:
         timeout = aiohttp.ClientTimeout(total=4, connect=2, sock_read=2)
         async with asyncio.timeout(5), aiohttp.ClientSession(
             connector=connector, timeout=timeout, trust_env=False,
-            headers={'User-Agent': 'BuenPasoMVP/0.1', 'Accept': 'application/rdap+json, application/json'},
+            headers={'User-Agent': 'SynchroData/0.1', 'Accept': 'application/rdap+json, application/json'},
         ) as session:
             async with session.get(RDAP_URL + quote(host, safe='')) as response:
                 if response.status != 200:

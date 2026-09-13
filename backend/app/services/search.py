@@ -120,5 +120,5 @@ async def alternatives(product: Product, provider: SearchProvider | None = None)
     if not found:
         notes.append('No se encontraron opciones suficientemente relacionadas. Prueba otra URL de producto.')
     if not os.getenv('BRANCH_CATALOG_PATH'):
-        notes.append('Falta BRANCH_CATALOG_PATH: no hay sucursales documentadas; las ofertas no generan paradas.')
+        notes.append('No hay sucursales verificadas en el catálogo configurado; las ofertas no añaden una parada al recorrido.')
     return found, notes

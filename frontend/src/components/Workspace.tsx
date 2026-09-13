@@ -293,6 +293,15 @@ export default function Workspace() {
     setUrl(mode === "demo" ? (next === "website" ? "https://tienda-tramites.example" : "https://example.com/audifonos") : "");
   }
 
+  function loadReference(nextTarget: AnalysisTarget, nextUrl: string) {
+    setMode("real");
+    setTarget(nextTarget);
+    setUrl(nextUrl);
+    setAnalysis(null);
+    setError("");
+    setSavedAt(null);
+  }
+
   async function analyze(event: React.FormEvent) {
     event.preventDefault();
     if (!online) return;
@@ -391,7 +400,7 @@ export default function Workspace() {
       </a>
       
       <header className="header">
-        <Link className="brand" href="/" aria-label="BuenPaso, inicio">
+        <Link className="brand" href="/" aria-label="SynchroData, inicio">
           <RouteIcon size={30} />
           <span>{t.header.brand}</span>
         </Link>
@@ -654,6 +663,24 @@ export default function Workspace() {
               <small>
                 {t.welcome.demoNote}
               </small>
+              <section className="reference-examples" aria-label={t.welcome.referencesAriaLabel}>
+                <p>{t.welcome.referencesTitle}</p>
+                <div>
+                  <button type="button" onClick={() => loadReference("website", "https://www.amazon.com.mx/")}>
+                    <GlobeLock size={16} />
+                    <span>{t.welcome.officialDomain}<small>amazon.com.mx</small></span>
+                  </button>
+                  <button type="button" className="reference-suspicious" onClick={() => loadReference("website", "https://amazon-verificacion.example/")}>
+                    <TriangleAlert size={16} />
+                    <span>{t.welcome.suspiciousSimulation}<small>amazon-verificacion.example</small></span>
+                  </button>
+                  <button type="button" onClick={() => loadReference("product", "https://www.amazon.com.mx/Sony-Aud%C3%ADfonos-inal%C3%A1mbricos-WH-CH520-duraci%C3%B3n/dp/B0BS1PRC4L")}>
+                    <PackageSearch size={16} />
+                    <span>{t.welcome.amazonProduct}<small>Sony WH-CH520</small></span>
+                  </button>
+                </div>
+                <small>{t.welcome.referencesHint}</small>
+              </section>
             </div>
           )}
           {complete && analysis.product && (
@@ -676,7 +703,7 @@ export default function Workspace() {
                     <small>{analysis.product.store}</small>
                   </div>
                 </div>
-                {analysis.risk && (
+                {analysis.risk && !(mode === "demo" && analysis.risk.level === "información insuficiente") && (
                   <div className="risk-box">
                     <TriangleAlert size={21} />
                     <div>

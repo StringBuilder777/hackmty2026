@@ -1,4 +1,4 @@
-# Plan de implementación y presentación — BuenPaso Forensic Auditor
+# Plan de implementación y presentación — SynchroData Forensic Auditor
 
 ## Objetivo de entrega
 
@@ -100,7 +100,7 @@ de evaluación.
 ### 0:00–0:30 — problema y propuesta
 
 “Las revisiones manuales encuentran señales tarde y son difíciles de reproducir.
-BuenPaso convierte una SQLite en un expediente verificable: no acusa por una
+SynchroData convierte una SQLite en un expediente verificable: no acusa por una
 corazonada, sino por una regla, registros y una conciliación.”
 
 ### 0:30–1:15 — cargar y ejecutar

@@ -84,7 +84,7 @@ async def fetch_html(url: str) -> tuple[str, str]:
         connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False, limit=4)
         timeout = aiohttp.ClientTimeout(total=12, connect=5, sock_read=5)
         async with aiohttp.ClientSession(connector=connector, timeout=timeout, trust_env=False, auto_decompress=True,
-                                        headers={'User-Agent': 'BuenPasoMVP/0.1', 'Accept': 'text/html', 'Accept-Encoding': 'gzip, deflate'}) as session:
+                                        headers={'User-Agent': 'SynchroData/0.1', 'Accept': 'text/html', 'Accept-Encoding': 'gzip, deflate'}) as session:
             for attempt in range(4):
                 validate_url(url)
                 async with session.get(url, allow_redirects=False) as response:

@@ -9,7 +9,7 @@ def test_demo_flow_and_health():
         assert response.status_code == 202
         result = client.get('/analyses/' + response.json()['id']).json()
         assert result['status'] == 'completed' and result['mode'] == 'demo'
-        assert result['store_profile']['domain'] == 'demo.buenpaso.mx'
+        assert result['store_profile']['domain'] == 'demo.synchrodata.mx'
         assert result['store_profile']['image'] == '/demo-store.svg'
         assert result['store_profile']['seller_name'] == 'Vendedor de ejemplo'
         assert len(result['alternatives']) == 3

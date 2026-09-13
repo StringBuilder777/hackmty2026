@@ -1,4 +1,4 @@
-# Manual de Marca y Sistema de Diseño (MB) · BuenPaso
+# Manual de Marca y Sistema de Diseño (MB) · SynchroData
 **Inspiración Apple Design · Colores Sólidos y Mate · Máximo Aprovechamiento Espacial**
 *Versión 4.0 · HackMTY 2026*
 
@@ -6,7 +6,7 @@
 
 ## 1. Filosofía de Identidad y Diseño
 
-BuenPaso es la plataforma de compra inteligente y transparente en Monterrey, diseñada para asistir a los consumidores evaluando señales de riesgo, comparando ofertas reales y trazando rutas de recogida eficientes.
+SynchroData es la plataforma de compra inteligente y transparente en Monterrey, diseñada para asistir a los consumidores evaluando señales de riesgo, comparando ofertas reales y trazando rutas de recogida eficientes.
 
 ### Los Tres Pilares de Diseño (Estilo Apple):
 1. **Claridad & Tipografía Robusta**: La información crítica (riesgo, precio, inventario, ruta) tiene jerarquía incuestionable. Tipografía SF Pro con espaciado óptico calibrado.
@@ -36,7 +36,7 @@ Todos los tonos han sido formulados para proyectar precisión tecnológica, sobr
 | `--apple-text-secondary`| **Gris Pizarra Mate** | `#64748B` | **4.9:1 (AA)** | Subtítulos, descripciones secundarias, timestamps y etiquetas de origen. |
 | `--apple-text-tertiary` | **Gris Auxiliar** | `#86868B` | **3.8:1** | Leyendas pequeñas, avisos legales y contadores de navegación. |
 
-### 2.3 Acento Principal (BuenPaso Pine / Apple Forest)
+### 2.3 Acento Principal (SynchroData Pine / Apple Forest)
 
 Representa ecología, confianza y verificación en Monterrey. Acabado verde bosque mate profundo.
 

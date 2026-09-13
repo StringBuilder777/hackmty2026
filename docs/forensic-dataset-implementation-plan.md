@@ -22,7 +22,7 @@ describir hallazgos que ya pasaron las validaciones.
 
 ## Flujo natural para una demo local
 
-1. Abrir BuenPaso y entrar a **Auditoría**.
+1. Abrir SynchroData y entrar a **Auditoría**.
 2. Seleccionar `estate.db` o arrastrarlo al área de carga.
 3. El sistema muestra una pantalla de preflight: tablas reconocidas, filas,
    periodo, nulos relevantes y hash del archivo.

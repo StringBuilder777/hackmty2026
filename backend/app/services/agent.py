@@ -96,6 +96,17 @@ def _parse(response: dict) -> AgentAssessment:
         raise ValueError('La respuesta del agente no respetó el contrato.') from exc
 
 
+def _parse_assessment_text(text: str) -> AgentAssessment:
+    """Parse an assessment even when a provider wraps JSON in a Markdown fence."""
+    normalized = text.strip()
+    if normalized.startswith('```'):
+        _, separator, normalized = normalized.partition('\n')
+        if not separator:
+            raise ValueError('La respuesta del agente no respetó el contrato.')
+        normalized = normalized.rsplit('```', 1)[0].strip()
+    return AgentAssessment.model_validate(json.loads(normalized))
+
+
 async def assess(
     risk: Risk, product: Product | None, alternatives: list[Product] | None = None, website: WebsiteProfile | None = None,
 ) -> tuple[AgentAssessment | None, str | None]:
@@ -139,6 +150,7 @@ async def _assess_bedrock(
     try:
         import boto3
         from botocore.config import Config
+        from botocore.exceptions import BotoCoreError, ClientError
         region = os.getenv('AWS_REGION', 'us-east-1')
         instruction = ('Responde exclusivamente JSON válido que satisfaga este esquema: ' + json.dumps(_schema(), ensure_ascii=False))
         payload = _payload(risk, product, alternatives, website)['contents'][0]['parts'][0]['text']
@@ -154,6 +166,6 @@ async def _assess_bedrock(
 
         response = await asyncio.wait_for(asyncio.to_thread(invoke), timeout=31)
         text = response['output']['message']['content'][0]['text']
-        return AgentAssessment.model_validate(json.loads(text)), None
-    except (ImportError, KeyError, TypeError, ValueError, json.JSONDecodeError, TimeoutError):
+        return _parse_assessment_text(text), None
+    except (ImportError, BotoCoreError, ClientError, KeyError, TypeError, ValueError, json.JSONDecodeError, TimeoutError):
         return None, 'La explicación de Bedrock no estuvo disponible; conserva las señales verificadas.'

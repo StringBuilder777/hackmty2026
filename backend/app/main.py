@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     rate.clear()
 
 
-app = FastAPI(title='BuenPaso API', version='0.1.0', lifespan=lifespan)
+app = FastAPI(title='SynchroData API', version='0.1.0', lifespan=lifespan)
 # The development server may select the next free port. Keep the local origins
 # explicit instead of using a wildcard, so a browser cannot read this API from
 # an unrelated site.
@@ -167,7 +167,7 @@ async def run_analysis(analysis: Analysis, url: str):
                 )
                 if agent_note:
                     analysis.limitations.append(agent_note)
-                analysis.limitations.append('Extracción de HTML y JSON-LD sin ejecutar JavaScript. No verifica identidad, reseñas ni inventario; no garantiza seguridad.')
+                analysis.limitations.append('El análisis extrae HTML y JSON-LD sin ejecutar JavaScript. La identidad, las reseñas y el inventario que publique el sitio son declaraciones no verificadas de forma independiente; no garantiza seguridad.')
                 analysis.status = 'completed'
         except Exception as exc:
             analysis.status = 'error'
