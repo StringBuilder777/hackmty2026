@@ -1,0 +1,215 @@
+{
+  "typography": [
+    {
+      "role": "display",
+      "fontFamily": "-apple-system",
+      "fontSize": "36px",
+      "fontWeight": "700",
+      "lineHeight": "40.32px",
+      "letterSpacing": "-1.08px",
+      "color": "#1D1D1F",
+      "sampleText": "Compra con más contexto."
+    },
+    {
+      "role": "heading",
+      "fontFamily": "-apple-system",
+      "fontSize": "28px",
+      "fontWeight": "700",
+      "lineHeight": "33.04px",
+      "letterSpacing": "-0.84px",
+      "color": "#1D1D1F",
+      "sampleText": "Encuentra una mejorforma de comprar."
+    },
+    {
+      "role": "link",
+      "fontFamily": "-apple-system",
+      "fontSize": "26px",
+      "fontWeight": "750",
+      "lineHeight": "39px",
+      "letterSpacing": "-0.91px",
+      "color": "#1D1D1F",
+      "sampleText": "SynchroData"
+    },
+    {
+      "role": "body",
+      "fontFamily": "-apple-system",
+      "fontSize": "15px",
+      "fontWeight": "400",
+      "lineHeight": "22.5px",
+      "letterSpacing": "-0.14px",
+      "color": "#64748B",
+      "sampleText": "Revisa una tienda, compara opciones y planea tu recorrido."
+    },
+    {
+      "role": "body-small",
+      "fontFamily": "-apple-system",
+      "fontSize": "11px",
+      "fontWeight": "400",
+      "lineHeight": "16.5px",
+      "letterSpacing": "-0.14px",
+      "color": "#64748B",
+      "sampleText": "Selecciona Demo y pulsa Analizar. Tiendas y precios ficticio"
+    }
+  ],
+  "spacing": {
+    "observed": [
+      2,
+      3,
+      4,
+      6,
+      8,
+      9,
+      10,
+      12,
+      14,
+      16,
+      18,
+      24,
+      28,
+      36,
+      190
+    ],
+    "baseUnit": 4
+  },
+  "radius": [
+    "12px",
+    "9999px"
+  ],
+  "shadows": [
+    {
+      "value": "rgba(0, 0, 0, 0.05) 0px 4px 16px 0px",
+      "count": 3
+    },
+    {
+      "value": "rgba(0, 0, 0, 0.1) 0px 1px 3px 0px",
+      "count": 2
+    },
+    {
+      "value": "rgba(37, 99, 235, 0.1) 0px 3px 12px 0px",
+      "count": 1
+    },
+    {
+      "value": "rgba(0, 122, 83, 0.18) 0px 4px 12px 0px",
+      "count": 1
+    }
+  ],
+  "buttons": [
+    {
+      "label": "ES",
+      "background": "#FFFFFF",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#1D1D1F",
+      "padding": "4px 12px",
+      "borderRadius": "9999px",
+      "border": "0px none rgb(29, 29, 31)",
+      "boxShadow": "rgba(0, 0, 0, 0.1) 0px 1px 3px 0px",
+      "fontSize": "11px",
+      "fontWeight": "600",
+      "height": "24.5px"
+    },
+    {
+      "label": "EN",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#64748B",
+      "padding": "4px 12px",
+      "borderRadius": "9999px",
+      "border": "0px none rgb(100, 116, 139)",
+      "boxShadow": "none",
+      "fontSize": "11px",
+      "fontWeight": "600",
+      "height": "24.5px"
+    },
+    {
+      "label": "ProductoPrecio, vendedor y alternativas",
+      "background": "#E6EDF6",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#1D4ED8",
+      "padding": "10px 12px",
+      "borderRadius": "12px",
+      "border": "1px solid rgb(96, 165, 250)",
+      "boxShadow": "rgba(37, 99, 235, 0.1) 0px 3px 12px 0px",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "height": "58.7969px"
+    },
+    {
+      "label": "Sitio webDominio, WHOIS y phishing",
+      "background": "#F4F6F8",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#475569",
+      "padding": "10px 12px",
+      "borderRadius": "12px",
+      "border": "1px solid rgb(219, 227, 238)",
+      "boxShadow": "none",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "height": "58.7969px"
+    },
+    {
+      "label": "Analizar",
+      "background": "#1463D8",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#FFFFFF",
+      "padding": "0px 24px",
+      "borderRadius": "12px",
+      "border": "0px none rgb(255, 255, 255)",
+      "boxShadow": "rgba(0, 122, 83, 0.18) 0px 4px 12px 0px",
+      "fontSize": "13.5px",
+      "fontWeight": "600",
+      "height": "50px"
+    },
+    {
+      "label": "Explorar el modo demo",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#1463D8",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(20, 99, 216)",
+      "boxShadow": "none",
+      "fontSize": "13px",
+      "fontWeight": "600",
+      "height": "19.5px"
+    }
+  ],
+  "cards": [],
+  "nav": {
+    "label": "navigation",
+    "background": "transparent",
+    "backgroundImage": "",
+    "backdropFilter": "",
+    "color": "#1D1D1F",
+    "padding": "0px",
+    "borderRadius": "0px",
+    "border": "0px solid rgb(29, 29, 31)",
+    "boxShadow": "none",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "height": "68px"
+  },
+  "chips": [
+    {
+      "label": "Revisa señales",
+      "background": "#F4F6F8",
+      "color": "#64748B",
+      "padding": "6px 12px",
+      "borderRadius": "9999px",
+      "border": "1px solid rgb(226, 232, 240)",
+      "boxShadow": "none",
+      "fontSize": "11px",
+      "fontWeight": "500",
+      "height": "31px"
+    }
+  ],
+  "statCells": [],
+  "tabs": [],
+  "backgrounds": [],
+  "glass": []
+}

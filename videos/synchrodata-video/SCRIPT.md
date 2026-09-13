@@ -1,0 +1,13 @@
+# SynchroData product demo narration
+
+Antes de comprar, un enlace no basta.
+
+SynchroData reúne las señales que importan.
+
+Analiza producto, vendedor y dominio, y muestra la evidencia disponible sin prometer certezas.
+
+Compara opciones, revisa variantes y organiza las paradas de tu recorrido.
+
+Para investigar más a fondo, la auditoría forense transforma datos en hallazgos con evidencia rastreable.
+
+SynchroData. Compra con más contexto.

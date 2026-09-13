@@ -1,0 +1,37 @@
+[a] Saltar a resultados
+[span] SynchroData
+[a] Explorar
+[a] Mi lista
+[a] Auditoría
+[span] Monterrey, NL
+[span] Análisis real · Evidencia disponible, sin garantías de seguridad.
+[button] Real
+[button] Demo
+[h1] Compra con más contexto.
+[p] Revisa una tienda, compara opciones y planea tu recorrido.
+[strong] Producto
+[small] Precio, vendedor y alternativas
+[strong] Sitio web
+[small] Dominio, WHOIS y phishing
+[label] URL de producto o tienda
+[button] Analizar
+[h2] Encuentra una mejor
+[h2] forma de comprar.
+[p] Empezamos con audífonos en Monterrey.
+[p] Un enlace es el primer paso.
+[span] Revisa señales
+[span] Compara opciones
+[span] Organiza paradas
+[button] Explorar el modo demo
+[small] Selecciona Demo y pulsa Analizar. Tiendas y precios ficticios.
+[p] Prueba ejemplos para comparar
+[span] Dominio oficial
+[small] amazon.com.mx
+[span] Simulación sospechosa
+[small] amazon-verificacion.example
+[span] Producto Amazon MX
+[small] Sony WH-CH520
+[small] Al elegir uno, revisa la URL y pulsa Analizar. El dominio de alerta es reservado y solo sirve como práctica.
+[footer] Las señales orientan; confirma las condiciones antes de comprar.
+[footer] Tu lista se guarda en este navegador.
+[span] SynchroData · HackMTY 2026
