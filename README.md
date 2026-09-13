@@ -66,6 +66,8 @@ En la interfaz, abrir **Auditoría** y seleccionar `backend/data/forensic-demo.d
 
 Antes de ejecutar, **Verificar dataset antes de auditar** genera un preflight local: hash SHA-256, tamaño, conteos de tablas, periodo y advertencias de calidad. `run_submission.py` también lo incorpora al `manifest.json`, junto con seed, versión de reglas, métricas y resultado del validador cuando se proporciona `--validator`. Por seguridad no sobrescribe un paquete existente salvo con `--overwrite`.
 
+El plan para completar el validador determinista, incorporar un investigador/challenger LLM sin autoridad factual, medir costos y demostrar replay offline está en [`docs/forensic-llm-validation-plan.md`](docs/forensic-llm-validation-plan.md).
+
 ## Qué funciona con datos reales
 
 - Descarga limitada de HTML público y extracción de Product/Offer en JSON-LD, título y metadatos. No ejecuta JavaScript ni evade autenticación o antibots.
